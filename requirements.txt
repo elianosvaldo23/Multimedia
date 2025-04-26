@@ -4,4 +4,4 @@ requests==2.31.0
 beautifulsoup4==4.12.2
 imdbpy
 flask==2.3.3
-yt-dlp==2024.3.1
+yt-dlp
