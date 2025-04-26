@@ -248,8 +248,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     
     await update.message.reply_text(
         f"¡Hola! {user.first_name}👋 te doy la bienvenida\n\n"
-        f"MultimediaTv un bot donde encontraras un amplio catálogo de películas y series, "
-        f"las cuales puedes buscar o solicitar en caso de no estar en el catálogo",
+        f"<blockquote>MultimediaTv un bot donde encontraras un amplio catálogo de películas y series, "
+        f"las cuales puedes buscar o solicitar en caso de no estar en el catálogo</blockquote>",
         reply_markup=reply_markup,
         parse_mode=ParseMode.HTML
     )
@@ -594,7 +594,7 @@ async def imdb_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 f"🎭 <b>Género:</b> {genres}\n"
                 f"🎬 <b>Director:</b> {directors_str}\n"
                 f"👥 <b>Reparto principal:</b> {cast_str}\n\n"
-                f"📝 <b>Sinopsis:</b>\n{plot}\n\n"
+                f"📝 <b>Sinopsis:</b>\n<blockquote>{plot}</blockquote>\n\n"
                 f"🔗 <a href='{imdb_url}'>Ver en IMDb</a>"
             )
             
@@ -727,9 +727,26 @@ async def search_imdb_info(title):
             'poster_url': None
         }
         
-        # Obtener URL del póster si está disponible
+        # Obtener URL del póster en ALTA RESOLUCIÓN
         if 'cover url' in movie:
-            info['poster_url'] = movie['cover url']
+            poster_url = movie['cover url']
+            # Modificar la URL para obtener una imagen más grande
+            # Las URLs de IMDb suelen ser como: https://m.media-amazon.com/images/M/.../MV5BMT...._V1_UX182_CR0,0,182,268_AL_.jpg
+            # Reemplazamos "_V1_UX182_CR0,0,182,268_AL_" por "_V1_SX800" para obtener una imagen de 800px de ancho
+            poster_url = re.sub(r'_V1_.*\.jpg', '_V1_SX800.jpg', poster_url)
+            info['poster_url'] = poster_url
+            
+        # Traducir la sinopsis a español utilizando deep-translator
+        if info['plot'] and info['plot'] != 'Sinopsis no disponible':
+            try:
+                from deep_translator import GoogleTranslator
+                translator = GoogleTranslator(source='auto', target='es')
+                translated_text = translator.translate(info['plot'])
+                if translated_text:
+                    info['plot'] = translated_text
+            except Exception as e:
+                logger.error(f"Error traduciendo sinopsis: {e}")
+                # Si falla la traducción, mantener el texto original
             
         # Obtener géneros
         if 'genres' in movie:
@@ -1476,10 +1493,11 @@ async def send_search_results(update: Update, context: ContextTypes.DEFAULT_TYPE
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await status_message.edit_text(
-            f"✅ Encontré {len(results)} resultados para '{query}'.\n\n"
-            "Selecciona uno para verlo:",
-            reply_markup=reply_markup
-        )
+            f"✅ Encontré {len(results)} resultados para '<b>{query}</b>'.\n\n"
+    		f"<blockquote>Selecciona uno para verlo:</blockquote>",
+    		reply_markup=reply_markup,
+    		parse_mode=ParseMode.HTML
+		)
     else:
         # Content not found, offer to make a request
         keyboard = [
@@ -1760,17 +1778,20 @@ async def handle_plan_details(update: Update, context: ContextTypes.DEFAULT_TYPE
     if callback_data == "plan_pro":
         plan_details = (
             f"💫 <b>Plan Pro - Detalles</b> 💫\n\n"
+            f"<blockquote>"
             f"Precio: 169.99\n"
             f"Duración: 30 días\n\n"
             f"Beneficios:\n"
             f"└ 2 pedidos diarios\n"
             f"└ 15 películas o series al día\n"
             f"└ No puede reenviar contenido ni guardarlo\n\n"
+            f"</blockquote>"
             f"Tu saldo actual: {user_data.get('balance', 0)} 💎"
         )
     elif callback_data == "plan_plus":
         plan_details = (
             f"💫 <b>Plan Plus - Detalles</b> 💫\n\n"
+            f"<blockquote>"
             f"Precio: 649.99\n"
             f"Duración: 30 días\n\n"
             f"Beneficios:\n"
@@ -1779,11 +1800,13 @@ async def handle_plan_details(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"└ Soporte prioritario\n"
             f"└ Enlaces directos de descarga\n"
             f"└ Acceso a contenido exclusivo\n\n"
+            f"</blockquote>"
             f"Tu saldo actual: {user_data.get('balance', 0)} 💎"
         )
     elif callback_data == "plan_ultra":
         plan_details = (
             f"⭐ <b>Plan Ultra - Detalles</b> ⭐\n\n"
+            f"<blockquote>"
             f"Precio: 1049.99\n"
             f"Duración: 30 días\n\n"
             f"Beneficios:\n"
@@ -1793,6 +1816,7 @@ async def handle_plan_details(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"└ Enlaces directos de descarga\n"
             f"└ Soporte VIP\n"
             f"└ Acceso anticipado a nuevo contenido\n\n"
+            f"</blockquote>"
             f"Tu saldo actual: {user_data.get('balance', 0)} 💎"
         )
     
@@ -1824,13 +1848,17 @@ async def handle_payment_method(update: Update, context: ContextTypes.DEFAULT_TY
     if payment_method == "cup":
         if plan_type == "plan_pro":
             payment_info = (
+                f"<blockquote>"
                 f"<b>Pago en CUP (Transferencia)</b>\n"
                 f"Precio: 169.99 CUP\n"
+                f"</blockquote>"
+                f"<blockquote>"
                 f"<b>Pago en CUP (Saldo)</b>\n"
                 f"Precio: 189.99 CUP\n"
+                f"</blockquote>"
                 f"Detalles de pago:\n"
-                f"Número: 9205 1299 7736 4067\n"
-                f"Telef: 55068190\n\n"
+                f"Número: `9205 1299 7736 4067`\n"
+                f"Telef: `55068190`\n\n"
                 f"⚠️ Después de realizar el pago, mandar captura del pago a @osvaldo20032 para activar tu plan."
             )
         elif plan_type == "plan_plus":
@@ -2116,6 +2144,25 @@ async def set_user_plan(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "Error al actualizar el plan del usuario.",
             parse_mode=ParseMode.HTML
         )
+        
+async def download_high_quality_image(url):
+    """Descarga imagen en alta calidad y devuelve los bytes"""
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        
+        # Verificar que realmente es una imagen
+        content_type = response.headers.get('Content-Type', '')
+        if not content_type.startswith('image/'):
+            raise ValueError(f"El contenido no es una imagen: {content_type}")
+            
+        return BytesIO(response.content)
+    except Exception as e:
+        logger.error(f"Error descargando imagen: {e}")
+        return None
 
 async def add_gift_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin command to create a gift code"""
@@ -2613,9 +2660,11 @@ async def upser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         
         await update.message.reply_text(
             "📺 <b>Modo de carga de series activado</b>\n\n"
-            "1️⃣ Envía los capítulos en orden uno por uno\n"
-            "2️⃣ Al finalizar el envío de los capítulos, envía /upser nuevamente para subir la serie\n"
-            "El bot automáticamente buscará la información y portada de la serie\n\n"
+    "<blockquote>"
+    		"1️⃣ Envía los capítulos en orden uno por uno\n"
+    		"2️⃣ Al finalizar el envío de los capítulos, envía /upser nuevamente para subir la serie\n"
+    		"El bot automáticamente buscará la información y portada de la serie\n"
+    "</blockquote>\n"
             "Para cancelar el proceso, envía /cancelupser",
             parse_mode=ParseMode.HTML
         )
@@ -2665,7 +2714,7 @@ async def upser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                     f"🎭 <b>Género:</b> {imdb_info['genres']}\n"
                     f"🎬 <b>Director:</b> {imdb_info['directors']}\n"
                     f"👥 <b>Reparto:</b> {imdb_info['cast']}\n\n"
-                    f"📝 <b>Sinopsis:</b>\n{imdb_info['plot']}\n\n"
+                    f"📝 <b>Sinopsis:</b>\n<blockquote>{imdb_info['plot']}</blockquote>\n\n"
                     f"🔗 <a href='{imdb_info['url']}'>Ver en IMDb</a>"
                 )
                 
