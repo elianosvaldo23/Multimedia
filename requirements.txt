@@ -1,0 +1,7 @@
+python-telegram-bot==20.7
+pymongo==4.6.1
+requests==2.31.0
+beautifulsoup4==4.12.2
+imdbpy==2023.10.15
+flask==2.3.3
+yt-dlp==2024.3.1

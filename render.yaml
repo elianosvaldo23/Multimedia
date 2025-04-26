@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: multimediatv-bot
+    env: docker
+    buildCommand: docker build -t multimediatv-bot .
+    startCommand: docker run multimediatv-bot
+    envVars:
+      - key: MONGODB_URI
+        sync: false
+      - key: TELEGRAM_TOKEN
+        sync: false
