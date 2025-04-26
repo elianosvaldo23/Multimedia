@@ -248,8 +248,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     
     await update.message.reply_text(
         f"¡Hola! {user.first_name}👋 te doy la bienvenida\n\n"
-        f"<blockquote>MultimediaTv un bot donde encontraras un amplio catálogo de películas y series, "
-        f"las cuales puedes buscar o solicitar en caso de no estar en el catálogo</blockquote>",
+        f"<blockquote><tgconv hide>MultimediaTv un bot donde encontraras un amplio catálogo de películas y series, "
+        f"las cuales puedes buscar o solicitar en caso de no estar en el catálogo</tgconv></blockquote>",
         reply_markup=reply_markup,
         parse_mode=ParseMode.HTML
     )
@@ -275,8 +275,8 @@ async def handle_series_request(update: Update, context: ContextTypes.DEFAULT_TY
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await update.message.reply_text(
-            "❌ Has alcanzado tu límite de búsquedas diarias.\n\n"
-            "Para continuar viendo series, adquiere un plan premium:",
+            "<blockquote><tgconv hide>❌ Has alcanzado tu límite de búsquedas diarias.\n\n"
+            "Para continuar viendo series, adquiere un plan premium:</tgconv></blockquote>",
             reply_markup=reply_markup,
             parse_mode=ParseMode.HTML
         )
@@ -293,7 +293,7 @@ async def handle_series_request(update: Update, context: ContextTypes.DEFAULT_TY
     
     if not series:
         await update.message.reply_text(
-            "❌ Serie no encontrada. Es posible que haya sido eliminada o que el enlace sea incorrecto.",
+            "❌ Serie no encontrada.<blockquote><tgconv hide>Es posible que haya sido eliminada o que el enlace sea incorrecto.</tgconv></blockquote>",
             parse_mode=ParseMode.HTML
         )
         return
@@ -348,7 +348,7 @@ async def handle_series_request(update: Update, context: ContextTypes.DEFAULT_TY
         # Enviar mensaje con botones
         await update.message.reply_text(
             f"📺 <b>{series['title']}</b>\n\n"
-            f"Selecciona un capítulo para ver o solicita todos los capítulos:",
+            f"<blockquote><tgconv hide>Selecciona un capítulo para ver o solicita todos los capítulos:</tgconv></blockquote>",
             reply_markup=reply_markup,
             parse_mode=ParseMode.HTML
         )
@@ -594,7 +594,7 @@ async def imdb_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 f"🎭 <b>Género:</b> {genres}\n"
                 f"🎬 <b>Director:</b> {directors_str}\n"
                 f"👥 <b>Reparto principal:</b> {cast_str}\n\n"
-                f"📝 <b>Sinopsis:</b>\n<blockquote>{plot}</blockquote>\n\n"
+                f"📝 <b>Sinopsis:</b>\n<blockquote><tgconv hide>{plot}</tgconv></blockquote>\n\n"
                 f"🔗 <a href='{imdb_url}'>Ver en IMDb</a>"
             )
             
@@ -645,7 +645,7 @@ async def imdb_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                     f"⭐ <b>Calificación:</b> {rating}/10\n"
                     f"🎭 <b>Género:</b> {genres}\n"
                     f"👥 <b>Reparto:</b> {cast_str}\n\n"
-                    f"📝 <b>Sinopsis:</b>\n{plot}\n\n"
+                    f"📝 <b>Sinopsis:</b>\n<blockquote><tgconv hide>{plot}</tgconv></blockquote>\n\n"
                     f"🔗 <a href='{imdb_url}'>Ver en IMDb</a>"
                 )
                 
@@ -1083,7 +1083,7 @@ async def search_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Get search query from command arguments
     if not context.args:
         await update.message.reply_text(
-            "Por favor, proporciona el nombre de la película o serie que deseas buscar.\n"
+            "<blockquote><tgconv hide>Por favor, proporciona el nombre de la película o serie que deseas buscar.</tgconv></blockquote>\n"
             "Ejemplo: /search Stranger Things",
             parse_mode=ParseMode.HTML
         )
@@ -1118,7 +1118,7 @@ async def search_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         
         await update.message.reply_text(
             "❌ Has alcanzado tu límite de búsquedas diarias.\n\n"
-            "Para continuar buscando, adquiere un plan premium:",
+            "<blockquote><tgconv hide>Para continuar buscando, adquiere un plan premium:</tgconv></blockquote>",
             reply_markup=reply_markup,
             parse_mode=ParseMode.HTML
         )
@@ -1133,7 +1133,7 @@ async def search_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Initialize user preferences if not exist
     if user_id not in user_preferences:
         user_preferences[user_id] = {
-            "max_results": 5,
+            "max_results": 50,
             "show_previews": True,
             "sort_by_date": True
         }
@@ -1511,10 +1511,10 @@ async def send_search_results(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         await status_message.edit_text(
             f"No se encontraron resultados para '{query}'.\n\n"
-            f"Comprueba que escribes el nombre correctamente o utiliza variaciones del mismo. "
+            f"<blockquote><tgconv hide>Comprueba que escribes el nombre correctamente o utiliza variaciones del mismo. "
             f"Prueba escribiendo el nombre en el idioma oficial o español o solamente pon una palabra clave.\n"
             f"¿Quieres hacer un pedido?\n"
-            f"Selecciona el tipo y haz clic en 'Hacer pedido'.",
+            f"Selecciona el tipo y haz clic en 'Hacer pedido'.</tgconv></blockquote>",
             reply_markup=reply_markup
         )
 
@@ -1677,7 +1677,7 @@ async def handle_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Create profile message with real-time limits
     profile_text = (
         f"👤 <b>Perfil de Usuario</b>\n\n"
-        f"Nombre: {query.from_user.first_name}\n"
+        f"<blockquote><tgconv hide>Nombre: {query.from_user.first_name}\n"
         f"Saldo: {user_data.get('balance', 0)} 💎\n"
         f"ID: {user_id}\n"
         f"Plan: {plan_name}\n"
@@ -1685,7 +1685,7 @@ async def handle_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Pedidos restantes: {requests_remaining_text}\n"
         f"Búsquedas restantes: {searches_remaining_text}\n"
         f"Fecha de Unión: {join_date}\n"
-        f"Referidos: {referral_count}\n"
+        f"Referidos: {referral_count}\n</tgconv></blockquote>"
         f"Reinicio en: {reset_text}\n\n"
         f"🎁 Comparte tu enlace de referido y gana diamantes!"
     )
@@ -1726,19 +1726,19 @@ async def handle_plans(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Create plans message
     plans_text = (
         f"▧ Planes de Suscripción ▧\n\n"
-        f"Tu saldo actual: {user_data.get('balance', 0)} 💎\n"
-        f"Plan actual: {plan_name}\n\n"
+        f"<blockquote>Tu saldo actual: {user_data.get('balance', 0)} 💎\n"
+        f"Plan actual: {plan_name}\n\n</blockquote>"
         f"📋 Planes Disponibles:\n\n"
         f"Pro (169.99 | 29 ⭐)\n"
-        f"169.99 CUP\n"
-        f"0.49 USD\n\n"
+        f"<blockquote>169.99 CUP\n"
+        f"0.49 USD\n\n</blockquote>"
         f"Plus (649.99 | 117 ⭐)\n"
-        f"649.99 CUP\n"
-        f"1.99 USD\n\n"
+        f"<blockquote>649.99 CUP\n"
+        f"1.99 USD\n\n</blockquote>"
         f"Ultra (1049.99 | 176 ⭐)\n"
-        f"1049.99 CUP\n"
-        f"2.99 USD\n\n"
-        f"Pulsa los botones de debajo para mas info de los planes y formas de pago."
+        f"<blockquote>1049.99 CUP\n"
+        f"2.99 USD\n\n</blockquote>"
+        f"<blockquote>Pulsa los botones de debajo para mas info de los planes y formas de pago.</blockquote>"
     )
     
     # Create buttons
@@ -1778,36 +1778,31 @@ async def handle_plan_details(update: Update, context: ContextTypes.DEFAULT_TYPE
     if callback_data == "plan_pro":
         plan_details = (
             f"💫 <b>Plan Pro - Detalles</b> 💫\n\n"
-            f"<blockquote>"
-            f"Precio: 169.99\n"
+            f"<blockquote>Precio: 169.99\n"
             f"Duración: 30 días\n\n"
             f"Beneficios:\n"
             f"└ 2 pedidos diarios\n"
             f"└ 15 películas o series al día\n"
-            f"└ No puede reenviar contenido ni guardarlo\n\n"
-            f"</blockquote>"
+            f"└ No puede reenviar contenido ni guardarlo\n\n</blockquote>"
             f"Tu saldo actual: {user_data.get('balance', 0)} 💎"
         )
     elif callback_data == "plan_plus":
         plan_details = (
             f"💫 <b>Plan Plus - Detalles</b> 💫\n\n"
-            f"<blockquote>"
-            f"Precio: 649.99\n"
+            f"<blockquote>Precio: 649.99\n"
             f"Duración: 30 días\n\n"
             f"Beneficios:\n"
             f"└ 10 pedidos diarios\n"
             f"└ 50 películas o series al día\n"
             f"└ Soporte prioritario\n"
             f"└ Enlaces directos de descarga\n"
-            f"└ Acceso a contenido exclusivo\n\n"
-            f"</blockquote>"
+            f"└ Acceso a contenido exclusivo\n\n</blockquote>"
             f"Tu saldo actual: {user_data.get('balance', 0)} 💎"
         )
     elif callback_data == "plan_ultra":
         plan_details = (
             f"⭐ <b>Plan Ultra - Detalles</b> ⭐\n\n"
-            f"<blockquote>"
-            f"Precio: 1049.99\n"
+            f"<blockquote>Precio: 1049.99\n"
             f"Duración: 30 días\n\n"
             f"Beneficios:\n"
             f"└ Pedidos ilimitados\n"
@@ -1815,8 +1810,7 @@ async def handle_plan_details(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"└ Reenvío y guardado permitido\n"
             f"└ Enlaces directos de descarga\n"
             f"└ Soporte VIP\n"
-            f"└ Acceso anticipado a nuevo contenido\n\n"
-            f"</blockquote>"
+            f"└ Acceso anticipado a nuevo contenido\n\n</blockquote>"
             f"Tu saldo actual: {user_data.get('balance', 0)} 💎"
         )
     
@@ -1848,18 +1842,14 @@ async def handle_payment_method(update: Update, context: ContextTypes.DEFAULT_TY
     if payment_method == "cup":
         if plan_type == "plan_pro":
             payment_info = (
-                f"<blockquote>"
-                f"<b>Pago en CUP (Transferencia)</b>\n"
-                f"Precio: 169.99 CUP\n"
-                f"</blockquote>"
-                f"<blockquote>"
-                f"<b>Pago en CUP (Saldo)</b>\n"
-                f"Precio: 189.99 CUP\n"
-                f"</blockquote>"
+                f"<blockquote><b>Pago en CUP (Transferencia)</b>\n"
+                f"Precio: 169.99 CUP\n</blockquote>"
+                f"<blockquote><b>Pago en CUP (Saldo)</b>\n"
+                f"Precio: 189.99 CUP\n</blockquote>"
                 f"Detalles de pago:\n"
-                f"Número: `9205 1299 7736 4067`\n"
-                f"Telef: `55068190`\n\n"
-                f"⚠️ Después de realizar el pago, mandar captura del pago a @osvaldo20032 para activar tu plan."
+                f"Número: <code>9205 1299 7736 4067\n</code>"
+                f"Telef: <code>55068190\n\n</code>"
+                f"<blockquote>⚠️ Después de realizar el pago, mandar captura del pago a @osvaldo20032 para activar tu plan.</blockquote>"
             )
         elif plan_type == "plan_plus":
             payment_info = (
@@ -1868,9 +1858,9 @@ async def handle_payment_method(update: Update, context: ContextTypes.DEFAULT_TY
                 f"<b>Pago en CUP (Saldo)</b>\n"
                 f"Precio: 669.99 CUP\n"
                 f"Detalles de pago:\n"
-                f"Número: 9205 1299 7736 4067\n"
-                f"Telef: 55068190\n\n"
-                f"⚠️ Después de realizar el pago, mandar captura del pago a @osvaldo20032 para activar tu plan."
+                f"Número: <code>9205 1299 7736 4067\n</code>"
+                f"Telef: <code>55068190</code>\n\n"
+                f"<blockquote>⚠️ Después de realizar el pago, mandar captura del pago a @osvaldo20032 para activar tu plan.</blockquote>"
             )
         elif plan_type == "plan_ultra":
             payment_info = (
@@ -1879,9 +1869,9 @@ async def handle_payment_method(update: Update, context: ContextTypes.DEFAULT_TY
                 f"<b>Pago en CUP (Saldo)</b>\n"
                 f"Precio: 1089.99 CUP\n"
                 f"Detalles de pago:\n"
-                f"Número: 9205 1299 7736 4067\n"
-                f"Telef: 55068190\n\n"
-                f"⚠️ Después de realizar el pago, mandar captura del pago a @osvaldo20032 para activar tu plan."
+                f"Número: <code>9205 1299 7736 4067\n</code>"
+                f"Telef: <code>55068190\n\n</code>"
+                f"<blockquote>⚠️ Después de realizar el pago, mandar captura del pago a @osvaldo20032 para activar tu plan.</blockquote>"
             )
     elif payment_method == "crypto":
         if plan_type == "plan_pro":
@@ -1889,24 +1879,24 @@ async def handle_payment_method(update: Update, context: ContextTypes.DEFAULT_TY
                 f"<b>Pago con USDT (BEP 20)</b>\n"
                 f"Precio: 0.49 USDTT\n"
                 f"Detalles de pago:\n"
-                f"Dirección: 0x26d89897c4e452C7BD3a0B8Aa79dD84E516BD4c6\n\n"
-                f"⚠️ Después de realizar el pago, mandar captura del pago a @osvaldo20032 para activar tu plan."
+                f"Dirección: <code>0x26d89897c4e452C7BD3a0B8Aa79dD84E516BD4c6\n\n</code>"
+                f"<blockquote>⚠️ Después de realizar el pago, mandar captura del pago a @osvaldo20032 para activar tu plan.</blockquote>"
             )
         elif plan_type == "plan_plus":
             payment_info = (
                 f"<b>Pago con USDT (BEP 20)</b>\n"
                 f"Precio: 1.99 USDTT\n"
                 f"Detalles de pago:\n"
-                f"Dirección: 0x26d89897c4e452C7BD3a0B8Aa79dD84E516BD4c6\n\n"
-                f"⚠️ Después de realizar el pago, mandar captura del pago a @osvaldo20032 para activar tu plan."
+                f"Dirección: <code>0x26d89897c4e452C7BD3a0B8Aa79dD84E516BD4c6\n\n</code>"
+                f"<blockquote>⚠️ Después de realizar el pago, mandar captura del pago a @osvaldo20032 para activar tu plan.</blockquote>"
             )
         elif plan_type == "plan_ultra":
             payment_info = (
                 f"<b>Pago con USDT (BEP 20)</b>\n"
                 f"Precio: 2.99 USDTT\n"
                 f"Detalles de pago:\n"
-                f"Dirección: 0x26d89897c4e452C7BD3a0B8Aa79dD84E516BD4c6\n\n"
-                f"⚠️ Después de realizar el pago, mandar captura del pago a @osvaldo20032 para activar tu plan."
+                f"Dirección: <code>0x26d89897c4e452C7BD3a0B8Aa79dD84E516BD4c6\n\n</code>"
+                f"<blockquote>⚠️ Después de realizar el pago, mandar captura del pago a @osvaldo20032 para activar tu plan.</blockquote>"
             )
     
     # Create back button
@@ -1927,12 +1917,13 @@ async def handle_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     
     info_text = (
-        "Funcionamiento del bot:\n\n"
+        "<blockquote>Funcionamiento del bot:\n\n</blockquote>"
         "<b>Comandos:</b>\n"
         "/start - Inicia el bot y envía el mensaje de bienvenida con los botones principales\n"
         "/search - Seguido del nombre de la película o serie, buscará en el canal y luego enviará al usuario\n\n"
-        "Si la película o serie no se encuentra en el canal, el bot te permitirá hacer un pedido.\n\n"
-        "Búsquedas para usuarios sin plan premium: solo podrán realizar 3 búsquedas diarias, 1 pedido diario y no se les permitirá reenviar el video."
+        "/gift_code - Seguido del número del codigo \n\n"
+        "<blockquote><tgconv hide>Si la película o serie no se encuentra en el canal, el bot te permitirá hacer un pedido.\n\n"
+        "Búsquedas para usuarios sin plan premium: solo podrán realizar 3 búsquedas diarias, 1 pedido diario y no se les permitirá reenviar el video.</tgconv></blockquote>"
     )
     
     # Create back button
@@ -1981,7 +1972,7 @@ async def handle_make_request(update: Update, context: ContextTypes.DEFAULT_TYPE
     if requests_left <= 0:
         await query.edit_message_text(
             "Has alcanzado el límite de pedidos diarios para tu plan.\n"
-            "Considera actualizar tu plan para obtener más pedidos.",
+            "<blockquote>Considera actualizar tu plan para obtener más pedidos.</blockquote>",
             parse_mode=ParseMode.HTML
         )
         return
@@ -2057,7 +2048,7 @@ async def handle_accept_request(update: Update, context: ContextTypes.DEFAULT_TY
         await context.bot.send_message(
             chat_id=user_id,
             text=f"✅ ¡Buenas noticias! Tu solicitud para '<b>{content_name}</b>' ha sido aceptada.\n"
-                 f"El contenido estará disponible pronto en el bot. Podrás buscarlo usando /search.",
+                 f"<blockquote>El contenido estará disponible pronto en el bot. Podrás buscarlo usando /search.</blockquote>",
             parse_mode=ParseMode.HTML
         )
         
@@ -2476,7 +2467,7 @@ async def request_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if requests_left <= 0:
         await update.message.reply_text(
             "Has alcanzado el límite de pedidos diarios para tu plan.\n"
-            "Considera actualizar tu plan para obtener más pedidos.",
+            "<blockquote>Considera actualizar tu plan para obtener más pedidos.</blockquote>",
             parse_mode=ParseMode.HTML
         )
         return
@@ -2620,7 +2611,7 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await context.bot.send_message(
                 chat_id=user_id,
-                text=f"📢 <b>Anuncio Oficial</b>\n\n{message}",
+                text=f"<blockquote>📢 <b>Anuncio Oficial</blockquote></b>\n\n{message}",
                 parse_mode=ParseMode.HTML
             )
             sent_count += 1
@@ -2714,7 +2705,7 @@ async def upser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                     f"🎭 <b>Género:</b> {imdb_info['genres']}\n"
                     f"🎬 <b>Director:</b> {imdb_info['directors']}\n"
                     f"👥 <b>Reparto:</b> {imdb_info['cast']}\n\n"
-                    f"📝 <b>Sinopsis:</b>\n<blockquote>{imdb_info['plot']}</blockquote>\n\n"
+                    f"📝 <b>Sinopsis:</b>\n<blockquote><tgconv hide>{imdb_info['plot']}</tgconv></blockquote>\n\n"
                     f"🔗 <a href='{imdb_info['url']}'>Ver en IMDb</a>"
                 )
                 
@@ -3057,7 +3048,7 @@ async def verify_channel_membership(update: Update, context: ContextTypes.DEFAUL
         
         await query.edit_message_text(
             f"✅ ¡Verificación exitosa! Gracias por unirte a nuestro canal.\n\n"
-            f"Ya puedes disfrutar de todas las funcionalidades del bot.",
+            f"<blockquote>Ya puedes disfrutar de todas las funcionalidades del bot.</blockquote>",
             reply_markup=reply_markup,
             parse_mode=ParseMode.HTML
         )
@@ -3071,10 +3062,10 @@ async def verify_channel_membership(update: Update, context: ContextTypes.DEFAUL
         
         await query.edit_message_text(
             "❌ No se ha detectado tu membresía en el canal.\n\n"
-            "Por favor, asegúrate de:\n"
+            "<blockquote>Por favor, asegúrate de:\n"
             "1. Hacer clic en 'Unirse al Canal 📢'\n"
             "2. Aceptar unirte al canal\n"
-            "3. Volver aquí y presionar 'Verificar nuevamente 🔄'",
+            "3. Volver aquí y presionar 'Verificar nuevamente 🔄</blockquote>'",
             reply_markup=reply_markup,
             parse_mode=ParseMode.HTML
         )
@@ -3132,8 +3123,8 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         
         await query.edit_message_text(
             "⚠️ Para usar el bot, debes unirte a nuestro canal principal.\n\n"
-            "1. Haz clic en el botón 'Unirse al Canal 📢'\n"
-            "2. Una vez unido, vuelve aquí y presiona 'Ya me uní ✅'",
+            "<blockquote>1. Haz clic en el botón 'Unirse al Canal 📢'\n"
+            "2. Una vez unido, vuelve aquí y presiona 'Ya me uní ✅</blockquote>'",
             reply_markup=reply_markup,
             parse_mode=ParseMode.HTML
         )
@@ -3162,8 +3153,8 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         try:
             await query.edit_message_text(
                 f"¡Hola! {user.first_name}👋 te doy la bienvenida\n\n"
-                f"MultimediaTv un bot donde encontraras un amplio catálogo de películas y series, "
-                f"las cuales puedes buscar o solicitar en caso de no estar en el catálogo",
+                f"<blockquote><tgconv hide>MultimediaTv un bot donde encontraras un amplio catálogo de películas y series, "
+                f"las cuales puedes buscar o solicitar en caso de no estar en el catálogo</tgconv></blockquote>",
                 reply_markup=reply_markup,
                 parse_mode=ParseMode.HTML
             )
@@ -3174,8 +3165,8 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 await context.bot.send_message(
                     chat_id=query.message.chat.id,
                     text=f"¡Hola! {user.first_name}👋 te doy la bienvenida\n\n"
-                         f"MultimediaTv un bot donde encontraras un amplio catálogo de películas y series, "
-                         f"las cuales puedes buscar o solicitar en caso de no estar en el catálogo",
+                         f"<blockquote><tgconv hide>MultimediaTv un bot donde encontraras un amplio catálogo de películas y series, "
+                         f"las cuales puedes buscar o solicitar en caso de no estar en el catálogo</tgconv></blockquote>",
                     reply_markup=reply_markup,
                     parse_mode=ParseMode.HTML
                 )
