@@ -2811,8 +2811,6 @@ def main() -> None:
     # Add command handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("search", search_content))
-    application.add_handler(CommandHandler("imdb", imdb_command))
-    application.add_handler(CommandHandler("down", down_command))
     application.add_handler(CommandHandler("plan", set_user_plan))
     application.add_handler(CommandHandler("upser", upser_command))
     application.add_handler(CommandHandler("cancelupser", cancel_upser_command))
