@@ -595,7 +595,7 @@ async def imdb_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                 f"🎬 <b>Director:</b> {directors_str}\n"
                 f"👥 <b>Reparto principal:</b> {cast_str}\n\n"
                 f"📝 <b>Sinopsis:</b>\n<blockquote expandable>{plot}</blockquote>\n\n"
-                f"🔗 <a href='{imdb_url}'>Ver en IMDb</a>"
+                f"🔗 <a href='{https://t.me/multimediatvOficial}'>MultimediaTv 📺</a>"
             )
             
             # Obtener URL del póster si está disponible
@@ -1494,7 +1494,7 @@ async def send_search_results(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         await status_message.edit_text(
             f"✅ Encontré {len(results)} resultados para '<b>{query}</b>'.\n\n"
-    		f"<blockquote expandable>Selecciona uno para verlo:</blockquote>",
+    		f"<blockquote>Selecciona uno para verlo:</blockquote>",
     		reply_markup=reply_markup,
     		parse_mode=ParseMode.HTML
 		)
@@ -1778,7 +1778,7 @@ async def handle_plan_details(update: Update, context: ContextTypes.DEFAULT_TYPE
     if callback_data == "plan_pro":
         plan_details = (
             f"💫 <b>Plan Pro - Detalles</b> 💫\n\n"
-            f"<blockquote expandable>"
+            f"<blockquote>"
             f"Precio: 169.99\n"
             f"Duración: 30 días\n\n"
             f"Beneficios:\n"
@@ -1791,7 +1791,7 @@ async def handle_plan_details(update: Update, context: ContextTypes.DEFAULT_TYPE
     elif callback_data == "plan_plus":
         plan_details = (
             f"💫 <b>Plan Plus - Detalles</b> 💫\n\n"
-            f"<blockquote expandable>"
+            f"<blockquote>"
             f"Precio: 649.99\n"
             f"Duración: 30 días\n\n"
             f"Beneficios:\n"
@@ -1806,7 +1806,7 @@ async def handle_plan_details(update: Update, context: ContextTypes.DEFAULT_TYPE
     elif callback_data == "plan_ultra":
         plan_details = (
             f"⭐ <b>Plan Ultra - Detalles</b> ⭐\n\n"
-            f"<blockquote expandable>"
+            f"<blockquote>"
             f"Precio: 1049.99\n"
             f"Duración: 30 días\n\n"
             f"Beneficios:\n"
@@ -1848,11 +1848,11 @@ async def handle_payment_method(update: Update, context: ContextTypes.DEFAULT_TY
     if payment_method == "cup":
         if plan_type == "plan_pro":
             payment_info = (
-                f"<blockquote expandable>"
+                f"<blockquote>"
                 f"<b>Pago en CUP (Transferencia)</b>\n"
                 f"Precio: 169.99 CUP\n"
                 f"</blockquote>"
-                f"<blockquote expandable>"
+                f"<blockquote>"
                 f"<b>Pago en CUP (Saldo)</b>\n"
                 f"Precio: 189.99 CUP\n"
                 f"</blockquote>"
@@ -2660,7 +2660,7 @@ async def upser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         
         await update.message.reply_text(
             "📺 <b>Modo de carga de series activado</b>\n\n"
-    "<blockquote expandable>"
+    "<blockquote>"
     		"1️⃣ Envía los capítulos en orden uno por uno\n"
     		"2️⃣ Al finalizar el envío de los capítulos, envía /upser nuevamente para subir la serie\n"
     		"El bot automáticamente buscará la información y portada de la serie\n"
@@ -2715,7 +2715,7 @@ async def upser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                     f"🎬 <b>Director:</b> {imdb_info['directors']}\n"
                     f"👥 <b>Reparto:</b> {imdb_info['cast']}\n\n"
                     f"📝 <b>Sinopsis:</b>\n<blockquote expandable>{imdb_info['plot']}</blockquote>\n\n"
-                    f"🔗 <a href='{imdb_info['url']}'>Ver en IMDb</a>"
+                    f"🔗 <a href='{https://t.me/multimediatvOficial}'>MultimediaTv 📺</a>"
                 )
                 
                 # Si encontramos un póster, descargarlo
