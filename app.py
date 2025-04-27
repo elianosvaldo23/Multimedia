@@ -1204,8 +1204,8 @@ async def handle_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Pedidos restantes: {requests_remaining_text}\n"
         f"Búsquedas restantes: {searches_remaining_text}\n"
         f"Fecha de Unión: {join_date}\n"
-        f"Referidos: {referral_count}\n"
-        f"Reinicio en: {reset_text}\n\n</blockquote>"
+        f"Referidos: {referral_count}\n</blockquote>"
+        f"Reinicio en: {reset_text}\n\n"
         f"🎁 Comparte tu enlace de referido y gana diamantes!"
     )
     
@@ -1378,50 +1378,50 @@ async def handle_payment_method(update: Update, context: ContextTypes.DEFAULT_TY
             )
         elif plan_type == "plan_plus":
             payment_info = (
-                f"<b>Pago en CUP (Transferencia)</b>\n"
-                f"Precio: 649.99 CUP\n"
-                f"<b>Pago en CUP (Saldo)</b>\n"
-                f"Precio: 669.99 CUP\n"
+                f"<blockquote><b>Pago en CUP (Transferencia)</b>\n"
+                f"Precio: 649.99 CUP\n</blockquote>"
+                f"<blockquote><b>Pago en CUP (Saldo)</b>\n"
+                f"Precio: 669.99 CUP\n</blockquote>"
                 f"Detalles de pago:\n"
-                f"Número: `9205 1299 7736 4067`\n"
-                f"Telef: `55068190`\n\n"
+                f"Número: <code>9205 1299 7736 4067\n</code>"
+                f"Telef: <code>55068190\n\n</code>"
                 f"<blockquote>⚠️ Después de realizar el pago, mandar captura del pago a @osvaldo20032 para activar tu plan.</blockquote>"
             )
         elif plan_type == "plan_ultra":
             payment_info = (
-                f"<b>Pago en CUP (Transferencia)</b>\n"
-                f"Precio: 1049.99 CUP\n"
-                f"<b>Pago en CUP (Saldo)</b>\n"
-                f"Precio: 1089.99 CUP\n"
+                f"<blockquote><b>Pago en CUP (Transferencia)</b>\n"
+                f"Precio: 1049.99 CUP\n</blockquote>"
+                f"<blockquote><b>Pago en CUP (Saldo)</b>\n"
+                f"Precio: 1089.99 CUP\n</blockquote>"
                 f"Detalles de pago:\n"
-                f"Número: 9205 1299 7736 4067\n"
-                f"Telef: 55068190\n\n"
-                f"⚠️ Después de realizar el pago, mandar captura del pago a @osvaldo20032 para activar tu plan."
+                f"Número: <code>9205 1299 7736 4067\n</code>"
+                f"Telef: <code>55068190\n\n</code>"
+                f"<blockquote>⚠️ Después de realizar el pago, mandar captura del pago a @osvaldo20032 para activar tu plan.</blockquote>"
             )
     elif payment_method == "crypto":
         if plan_type == "plan_pro":
             payment_info = (
-                f"<b>Pago con USDT (BEP 20)</b>\n"
-                f"Precio: 0.49 USDTT\n"
+                f"<blockquote><b>Pago con USDT (BEP 20)</b>\n"
+                f"Precio: 0.49 USDTT\n</blockquote>"
                 f"Detalles de pago:\n"
-                f"Dirección: 0x26d89897c4e452C7BD3a0B8Aa79dD84E516BD4c6\n\n"
-                f"⚠️ Después de realizar el pago, mandar captura del pago a @osvaldo20032 para activar tu plan."
+                f"Dirección: <code>0x26d89897c4e452C7BD3a0B8Aa79dD84E516BD4c6\n\n</code>"
+                f"<blockquote>⚠️ Después de realizar el pago, mandar captura del pago a @osvaldo20032 para activar tu plan.</blockquote>"
             )
         elif plan_type == "plan_plus":
             payment_info = (
-                f"<b>Pago con USDT (BEP 20)</b>\n"
-                f"Precio: 1.99 USDTT\n"
+                f"<blockquote><b>Pago con USDT (BEP 20)</b>\n"
+                f"Precio: 1.99 USDTT\n</blockquote>"
                 f"Detalles de pago:\n"
-                f"Dirección: 0x26d89897c4e452C7BD3a0B8Aa79dD84E516BD4c6\n\n"
-                f"⚠️ Después de realizar el pago, mandar captura del pago a @osvaldo20032 para activar tu plan."
+                f"Dirección: <code>0x26d89897c4e452C7BD3a0B8Aa79dD84E516BD4c6\n\n</code>"
+                f"<blockquote>⚠️ Después de realizar el pago, mandar captura del pago a @osvaldo20032 para activar tu plan.</blockquote>"
             )
         elif plan_type == "plan_ultra":
             payment_info = (
-                f"<b>Pago con USDT (BEP 20)</b>\n"
-                f"Precio: 2.99 USDTT\n"
+                f"<blockquote><b>Pago con USDT (BEP 20)</b>\n"
+                f"Precio: 2.99 USDTT\n</blockquote>"
                 f"Detalles de pago:\n"
-                f"Dirección: 0x26d89897c4e452C7BD3a0B8Aa79dD84E516BD4c6\n\n"
-                f"⚠️ Después de realizar el pago, mandar captura del pago a @osvaldo20032 para activar tu plan."
+                f"Dirección: <code>0x26d89897c4e452C7BD3a0B8Aa79dD84E516BD4c6\n\n</code>"
+                f"<blockquote>⚠️ Después de realizar el pago, mandar captura del pago a @osvaldo20032 para activar tu plan.</blockquote>"
             )
     
     # Create back button
@@ -1446,8 +1446,8 @@ async def handle_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "<b>Comandos:</b>\n"
         "/start - Inicia el bot y envía el mensaje de bienvenida con los botones principales\n"
         "/search - Seguido del nombre de la película o serie, buscará en el canal y luego enviará al usuario\n\n"
-        "Si la película o serie no se encuentra en el canal, el bot te permitirá hacer un pedido.\n\n"
-        "Búsquedas para usuarios sin plan premium: solo podrán realizar 3 búsquedas diarias, 1 pedido diario y no se les permitirá reenviar el video."
+        "<blockquote>Si la película o serie no se encuentra en el canal, el bot te permitirá hacer un pedido.\n\n"
+        "Búsquedas para usuarios sin plan premium: solo podrán realizar 3 búsquedas diarias, 1 pedido diario y no se les permitirá reenviar el video.</blockquote>"
     )
     
     # Create back button
@@ -1496,7 +1496,7 @@ async def handle_make_request(update: Update, context: ContextTypes.DEFAULT_TYPE
     if requests_left <= 0:
         await query.edit_message_text(
             "Has alcanzado el límite de pedidos diarios para tu plan.\n"
-            "Considera actualizar tu plan para obtener más pedidos.",
+            "<blockquote>Considera actualizar tu plan para obtener más pedidos.</blockquote>",
             parse_mode=ParseMode.HTML
         )
         return
@@ -1531,7 +1531,7 @@ async def handle_make_request(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         await context.bot.send_message(
             chat_id=ADMIN_ID,
-            text=f"📩 <b>Nuevo Pedido</b>\n\n"
+            text=f"<blockquote>📩 <b>Nuevo Pedido</b>\n\n</blockquote>"
                  f"Usuario: {query.from_user.first_name} (@{query.from_user.username})\n"
                  f"ID: {user_id}\n"
                  f"Tipo: {'Película' if req_type == 'movie' else 'Serie'}\n"
@@ -1543,8 +1543,8 @@ async def handle_make_request(update: Update, context: ContextTypes.DEFAULT_TYPE
         # Confirm to user
         await query.edit_message_text(
             f"✅ Tu pedido de {'película' if req_type == 'movie' else 'serie'} '{content_name}' ha sido enviado al administrador.\n"
-            f"Te notificaremos cuando esté disponible.\n"
-            f"Te quedan {requests_left-1} pedidos hoy.",
+            f"<blockquote>Te notificaremos cuando esté disponible.\n"
+            f"Te quedan {requests_left-1} pedidos hoy.</blockquote>",
             parse_mode=ParseMode.HTML
         )
     except Exception as e:
@@ -1572,14 +1572,14 @@ async def handle_accept_request(update: Update, context: ContextTypes.DEFAULT_TY
         await context.bot.send_message(
             chat_id=user_id,
             text=f"✅ ¡Buenas noticias! Tu solicitud para '<b>{content_name}</b>' ha sido aceptada.\n"
-                 f"El contenido estará disponible pronto en el bot. Podrás buscarlo usando /search.",
+                 f"<blockquote>El contenido estará disponible pronto en el bot. Podrás buscarlo usando /search.</blockquote>",
             parse_mode=ParseMode.HTML
         )
         
         # Update admin's message
         await query.edit_message_text(
             text=f"✅ Pedido aceptado: <b>{content_name}</b>\n"
-                 f"El usuario ha sido notificado.",
+                 f"<blockquote>El usuario ha sido notificado.</blockquote>",
             reply_markup=None,
             parse_mode=ParseMode.HTML
         )
@@ -1636,8 +1636,8 @@ async def set_user_plan(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(
                 chat_id=user_id,
                 text=f"🎉 ¡Felicidades! Tu plan ha sido actualizado a <b>{plan_name}</b>.\n"
-                     f"Expira el: {expiry_date.strftime('%d/%m/%Y')}\n"
-                     f"Disfruta de todos los beneficios de tu nuevo plan.",
+                     f"<blockquote>Expira el: {expiry_date.strftime('%d/%m/%Y')}\n"
+                     f"Disfruta de todos los beneficios de tu nuevo plan.</blockquote>",
                 parse_mode=ParseMode.HTML
             )
         except Exception as e:
@@ -1691,10 +1691,10 @@ async def add_gift_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) < 3:
         await update.message.reply_text(
             "Uso: /addgift_code código plan_number max_uses\n"
-            "Ejemplo: /addgift_code 2432 3 1\n"
+            "<blockquote>Ejemplo: /addgift_code 2432 3 1\n"
             "1 - Plan Pro\n"
             "2 - Plan Plus\n"
-            "3 - Plan Ultra",
+            "3 - Plan Ultra</blockquote>",
             parse_mode=ParseMode.HTML
         )
         return
@@ -1768,9 +1768,9 @@ async def redeem_gift_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
         plan_name = PLANS_INFO[plan_type]['name']
         await update.message.reply_text(
             f"🎉 ¡Felicidades! Has canjeado un código de regalo.\n"
-            f"Tu plan ha sido actualizado a <b>{plan_name}</b>.\n"
+            f"<blockquote>Tu plan ha sido actualizado a <b>{plan_name}</b>.\n"
             f"Expira el: {expiry_date.strftime('%d/%m/%Y')}\n"
-            f"Disfruta de todos los beneficios de tu nuevo plan.",
+            f"Disfruta de todos los beneficios de tu nuevo plan.</blockquote>",
             parse_mode=ParseMode.HTML
         )
     except Exception as e:
@@ -1973,7 +1973,7 @@ async def request_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) < 2:
         await update.message.reply_text(
             "Uso: /pedido año nombre_del_contenido\n"
-            "Ejemplo: /pedido 2023 Oppenheimer",
+            "<blockquote>Ejemplo: /pedido 2023 Oppenheimer</blockquote>",
             parse_mode=ParseMode.HTML
         )
         return
@@ -1991,7 +1991,7 @@ async def request_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if requests_left <= 0:
         await update.message.reply_text(
             "Has alcanzado el límite de pedidos diarios para tu plan.\n"
-            "Considera actualizar tu plan para obtener más pedidos.",
+            "<blockquote>Considera actualizar tu plan para obtener más pedidos.</blockquote>",
             parse_mode=ParseMode.HTML
         )
         return
@@ -2011,7 +2011,7 @@ async def request_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await context.bot.send_message(
             chat_id=ADMIN_ID,
-            text=f"📩 <b>Nuevo Pedido</b>\n\n"
+            text=f"<blockquote>📩 <b>Nuevo Pedido</b>\n\</blockquote>n"
                  f"Usuario: {update.effective_user.first_name} (@{update.effective_user.username})\n"
                  f"ID: {user_id}\n"
                  f"Año: {year}\n"
@@ -2023,8 +2023,8 @@ async def request_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Confirm to user
         await update.message.reply_text(
             f"✅ Tu pedido '<b>{content_name}</b>' ({year}) ha sido enviado al administrador.\n"
-            f"Te notificaremos cuando esté disponible.\n"
-            f"Te quedan {requests_left-1} pedidos hoy.",
+            f"<blockquote>Te notificaremos cuando esté disponible.\n"
+            f"Te quedan {requests_left-1} pedidos hoy.</blockquote>",
             parse_mode=ParseMode.HTML
         )
     except Exception as e:
@@ -2079,7 +2079,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         total_requests = db.get_total_requests()
         
         stats_text = (
-            "<b>📊 Estadísticas del Bot 📊</b>\n\n"
+            "<blockquote><b>📊 Estadísticas del Bot 📊</b>\n\n</blockquote>"
             f"👥 <b>Usuarios:</b>\n"
             f"- Total: {total_users}\n"
             f"- Activos (últimos 7 días): {active_users}\n"
@@ -2135,7 +2135,7 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await context.bot.send_message(
                 chat_id=user_id,
-                text=f"📢 <b>Anuncio Oficial</b>\n\n{message}",
+                text=f"<blockquote>📢 <b>Anuncio Oficial</b>\n\n</blockquote>{message}",
                 parse_mode=ParseMode.HTML
             )
             sent_count += 1
@@ -2525,7 +2525,7 @@ async def finalize_series_upload(update: Update, context: ContextTypes.DEFAULT_T
         
         # 11. Informar al administrador
         await status_message.edit_text(
-            f"✅ Serie <b>{title}</b> subida correctamente a los canales.\n\n"
+            f"<blockquote>✅ Serie <b>{title}</b> subida correctamente a los canales.\n\n</blockquote>"
             f"📊 Detalles:\n"
             f"- Capítulos: {len(episodes)}\n"
             f"- ID de serie: {series_id}\n"
@@ -2677,8 +2677,8 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         try:
             await query.edit_message_text(
                 f"¡Hola! {user.first_name}👋 te doy la bienvenida\n\n"
-                f"MultimediaTv un bot donde encontraras un amplio catálogo de películas y series, "
-                f"las cuales puedes buscar o solicitar en caso de no estar en el catálogo",
+                f"<blockquote expandable>MultimediaTv un bot donde encontraras un amplio catálogo de películas y series, "
+                f"las cuales puedes buscar o solicitar en caso de no estar en el catálogo</blockquote>",
                 reply_markup=reply_markup,
                 parse_mode=ParseMode.HTML
             )
@@ -2689,8 +2689,8 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 await context.bot.send_message(
                     chat_id=query.message.chat.id,
                     text=f"¡Hola! {user.first_name}👋 te doy la bienvenida\n\n"
-                         f"MultimediaTv un bot donde encontraras un amplio catálogo de películas y series, "
-                         f"las cuales puedes buscar o solicitar en caso de no estar en el catálogo",
+                         f"<blockquote expandable>MultimediaTv un bot donde encontraras un amplio catálogo de películas y series, "
+                         f"las cuales puedes buscar o solicitar en caso de no estar en el catálogo</blockquote>",
                     reply_markup=reply_markup,
                     parse_mode=ParseMode.HTML
                 )
@@ -2734,7 +2734,7 @@ async def check_plan_expiry(context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.send_message(
                     chat_id=user_id,
                     text="⚠️ Tu plan premium ha expirado. Has sido cambiado al plan básico.\n"
-                         "Para renovar tu plan, utiliza el botón 'Planes 📜' en el menú principal.",
+                         "<blockquote>Para renovar tu plan, utiliza el botón 'Planes 📜' en el menú principal.</blockquote>",
                     parse_mode=ParseMode.HTML
                 )
             except Exception as e:
