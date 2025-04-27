@@ -248,8 +248,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     
     await update.message.reply_text(
         f"¡Hola! {user.first_name}👋 te doy la bienvenida\n\n"
-        f"<blockquote>MultimediaTv un bot donde encontraras un amplio catálogo de películas y series, "
-        f"las cuales puedes buscar o solicitar en caso de no estar en el catálogo</blockquote>",
+        f"<blockquote><tgconv hide>MultimediaTv un bot donde encontraras un amplio catálogo de películas y series, "
+        f"las cuales puedes buscar o solicitar en caso de no estar en el catálogo</tgconv></blockquote>",
         reply_markup=reply_markup,
         parse_mode=ParseMode.HTML
     )
