@@ -248,8 +248,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     
     await update.message.reply_text(
         f"¡Hola! {user.first_name}👋 te doy la bienvenida\n\n"
-        f"<blockquote><tgconv hide>MultimediaTv un bot donde encontraras un amplio catálogo de películas y series, "
-        f"las cuales puedes buscar o solicitar en caso de no estar en el catálogo</tgconv></blockquote>",
+        f"<blockquote>MultimediaTv un bot donde encontraras un amplio catálogo de películas y series, "
+        f"las cuales puedes buscar o solicitar en caso de no estar en el catálogo</blockquote>",
         reply_markup=reply_markup,
         parse_mode=ParseMode.HTML
     )
@@ -275,8 +275,8 @@ async def handle_series_request(update: Update, context: ContextTypes.DEFAULT_TY
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await update.message.reply_text(
-            "<blockquote><tgconv hide>❌ Has alcanzado tu límite de búsquedas diarias.\n\n"
-            "Para continuar viendo series, adquiere un plan premium:</tgconv></blockquote>",
+            "❌ Has alcanzado tu límite de búsquedas diarias.\n\n"
+            "Para continuar viendo series, adquiere un plan premium:",
             reply_markup=reply_markup,
             parse_mode=ParseMode.HTML
         )
@@ -293,7 +293,7 @@ async def handle_series_request(update: Update, context: ContextTypes.DEFAULT_TY
     
     if not series:
         await update.message.reply_text(
-            "❌ Serie no encontrada.<blockquote><tgconv hide>Es posible que haya sido eliminada o que el enlace sea incorrecto.</tgconv></blockquote>",
+            "❌ Serie no encontrada. Es posible que haya sido eliminada o que el enlace sea incorrecto.",
             parse_mode=ParseMode.HTML
         )
         return
