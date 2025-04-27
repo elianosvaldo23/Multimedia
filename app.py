@@ -425,6 +425,187 @@ async def send_episode(query, context, series_id, episode_number):
             parse_mode=ParseMode.HTML
         )
 
+@check_channel_membership
+async def imdb_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Descarga y envía información de una película/serie desde un enlace de IMDb."""
+    if not update.message:
+        return
+    
+    # Verificar si el usuario proporcionó un enlace
+    if not context.args:
+        await update.message.reply_text(
+            "Por favor, proporciona un enlace de IMDb.\n"
+            "Ejemplo: /imdb https://www.imdb.com/title/tt14513804/",
+            parse_mode=ParseMode.HTML
+        )
+        return
+    
+    # Obtener el enlace
+    imdb_url = context.args[0]
+    
+    # Mostrar acción de escribiendo mientras se procesa
+    await context.bot.send_chat_action(
+        chat_id=update.effective_chat.id,
+        action=ChatAction.TYPING
+    )
+    
+    # Verificar que es un enlace de IMDb válido
+    if not re.match(r'https?://(www\.)?imdb\.com/title/tt\d+/?.*', imdb_url):
+        await update.message.reply_text(
+            "❌ El enlace proporcionado no es un enlace válido de IMDb.\n"
+            "Debe tener el formato: https://www.imdb.com/title/tt??????/",
+            parse_mode=ParseMode.HTML
+        )
+        return
+    
+    # Extraer el ID de IMDb del enlace
+    imdb_id = re.search(r'tt\d+', imdb_url).group(0)
+    
+    try:
+        # Enviar mensaje de procesamiento
+        processing_msg = await update.message.reply_text(
+            "🔍 Procesando información de IMDb... Por favor espera.",
+            parse_mode=ParseMode.HTML
+        )
+        
+        # Método 1: Usar IMDbPY para obtener información
+        try:
+            # Obtener la película/serie por ID
+            movie = ia.get_movie(imdb_id[2:])  # Eliminar 'tt' del ID
+            
+            # Extraer información básica
+            title = movie.get('title', 'Título no disponible')
+            year = movie.get('year', 'Año no disponible')
+            rating = movie.get('rating', 'N/A')
+            genres = ', '.join(movie.get('genres', ['Género no disponible']))
+            plot = movie.get('plot outline', 'Sinopsis no disponible')
+            
+            # Obtener directores
+            directors = []
+            if 'directors' in movie:
+                directors = [director['name'] for director in movie['directors'][:3]]
+            directors_str = ', '.join(directors) if directors else 'No disponible'
+            
+            # Obtener actores principales
+            cast = []
+            if 'cast' in movie:
+                cast = [actor['name'] for actor in movie['cast'][:5]]
+            cast_str = ', '.join(cast) if cast else 'No disponible'
+            
+            # Construir mensaje
+            message = (
+                f"🎬 <b>{title}</b> ({year})\n\n"
+                f"⭐ <b>Calificación:</b> {rating}/10\n"
+                f"🎭 <b>Género:</b> {genres}\n"
+                f"🎬 <b>Director:</b> {directors_str}\n"
+                f"👥 <b>Reparto principal:</b> {cast_str}\n\n"
+                f"📝 <b>Sinopsis:</b>\n<blockquote>{plot}</blockquote>\n\n"
+                f"🔗 <a href='{imdb_url}'>Ver en IMDb</a>"
+            )
+            
+            # Obtener URL del póster si está disponible
+            poster_url = None
+            if 'cover url' in movie:
+                poster_url = movie['cover url']
+            
+        except Exception as e:
+            logger.error(f"Error usando IMDbPY: {e}")
+            
+            # Si falla IMDbPY, usar web scraping como método alternativo
+            try:
+                # Realizar la solicitud HTTP
+                response = requests.get(imdb_url, headers={'User-Agent': 'Mozilla/5.0'})
+                response.raise_for_status()  # Verificar que la solicitud fue exitosa
+                
+                # Parsear el HTML
+                soup = BeautifulSoup(response.text, 'html.parser')
+                
+                # Extraer información básica
+                title_elem = soup.select_one('h1')
+                title = title_elem.text.strip() if title_elem else 'Título no disponible'
+                
+                # Intentar obtener el año
+                year_elem = soup.select_one('span.TitleBlockMetaData__ListItemText-sc-12ein40-2')
+                year = year_elem.text.strip() if year_elem else 'Año no disponible'
+                
+                # Intentar obtener la calificación
+                rating_elem = soup.select_one('span.AggregateRatingButton__RatingScore-sc-1ll29m0-1')
+                rating = rating_elem.text.strip() if rating_elem else 'N/A'
+                
+                # Intentar obtener géneros
+                genres_elems = soup.select('span.ipc-chip__text')
+                genres = ', '.join([genre.text for genre in genres_elems[:3]]) if genres_elems else 'Género no disponible'
+                
+                # Intentar obtener la sinopsis
+                plot_elem = soup.select_one('span.GenresAndPlot__TextContainerBreakpointXL-sc-cum89p-2')
+                plot = plot_elem.text.strip() if plot_elem else 'Sinopsis no disponible'
+                
+                # Intentar obtener directores y reparto
+                credits_elems = soup.select('a.StyledComponents__ActorName-sc-y9ygcu-1')
+                cast_str = ', '.join([actor.text for actor in credits_elems[:5]]) if credits_elems else 'No disponible'
+                
+                # Construir mensaje
+                message = (
+                    f"🎬 <b>{title}</b> ({year})\n\n"
+                    f"⭐ <b>Calificación:</b> {rating}/10\n"
+                    f"🎭 <b>Género:</b> {genres}\n"
+                    f"👥 <b>Reparto:</b> {cast_str}\n\n"
+                    f"📝 <b>Sinopsis:</b>\n{plot}\n\n"
+                    f"🔗 <a href='{imdb_url}'>Ver en IMDb</a>"
+                )
+                
+                # Intentar obtener la URL del póster
+                poster_elem = soup.select_one('img.ipc-image')
+                poster_url = poster_elem['src'] if poster_elem and 'src' in poster_elem.attrs else None
+                
+            except Exception as scrape_error:
+                logger.error(f"Error en web scraping: {scrape_error}")
+                await processing_msg.edit_text(
+                    f"❌ Error al obtener información de IMDb: {str(e)[:100]}\n\n"
+                    f"Por favor, verifica que el enlace sea correcto y que IMDb esté accesible.",
+                    parse_mode=ParseMode.HTML
+                )
+                return
+        
+        # Enviar mensaje y póster si está disponible
+        if poster_url:
+            try:
+                # Descargar imagen del póster
+                poster_response = requests.get(poster_url)
+                poster_response.raise_for_status()
+                
+                # Enviar la imagen con la información como pie de foto
+                await context.bot.send_photo(
+                    chat_id=update.effective_chat.id,
+                    photo=BytesIO(poster_response.content),
+                    caption=message,
+                    parse_mode=ParseMode.HTML
+                )
+                
+                # Eliminar mensaje de procesamiento
+                await processing_msg.delete()
+                
+            except Exception as img_error:
+                logger.error(f"Error enviando imagen: {img_error}")
+                # Si falla el envío de la imagen, enviar solo el texto
+                await processing_msg.edit_text(
+                    text=message,
+                    parse_mode=ParseMode.HTML
+                )
+        else:
+            # Si no hay póster, enviar solo el texto
+            await processing_msg.edit_text(
+                text=message,
+                parse_mode=ParseMode.HTML
+            )
+    
+    except Exception as e:
+        logger.error(f"Error en comando imdb: {e}")
+        await processing_msg.edit_text(
+            f"❌ Error al procesar la información de IMDb: {str(e)[:100]}",
+            parse_mode=ParseMode.HTML
+        )
+        
 async def send_all_episodes(query, context, series_id):
     """Enviar todos los capítulos de una serie al usuario"""
     user_id = query.from_user.id
@@ -2811,6 +2992,7 @@ def main() -> None:
     # Add command handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("search", search_content))
+    application.add_handler(CommandHandler("imdb", imdb_command))
     application.add_handler(CommandHandler("plan", set_user_plan))
     application.add_handler(CommandHandler("upser", upser_command))
     application.add_handler(CommandHandler("cancelupser", cancel_upser_command))
