@@ -652,7 +652,7 @@ async def search_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Initialize user preferences if not exist
     if user_id not in user_preferences:
         user_preferences[user_id] = {
-            "max_results": 100
+            "max_results": 100,
             "show_previews": True,
             "sort_by_date": True
         }
