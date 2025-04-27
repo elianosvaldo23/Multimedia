@@ -276,7 +276,7 @@ async def handle_series_request(update: Update, context: ContextTypes.DEFAULT_TY
         
         await update.message.reply_text(
             "❌ Has alcanzado tu límite de búsquedas diarias.\n\n"
-            "Para continuar viendo series, adquiere un plan premium:",
+            "<blockquote>Para continuar viendo series, adquiere un plan premium:</blockquote>",
             reply_markup=reply_markup,
             parse_mode=ParseMode.HTML
         )
@@ -520,187 +520,6 @@ async def send_all_episodes(query, context, series_id):
             parse_mode=ParseMode.HTML
         )
 
-@check_channel_membership
-async def imdb_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Descarga y envía información de una película/serie desde un enlace de IMDb."""
-    if not update.message:
-        return
-    
-    # Verificar si el usuario proporcionó un enlace
-    if not context.args:
-        await update.message.reply_text(
-            "Por favor, proporciona un enlace de IMDb.\n"
-            "Ejemplo: /imdb https://www.imdb.com/title/tt14513804/",
-            parse_mode=ParseMode.HTML
-        )
-        return
-    
-    # Obtener el enlace
-    imdb_url = context.args[0]
-    
-    # Mostrar acción de escribiendo mientras se procesa
-    await context.bot.send_chat_action(
-        chat_id=update.effective_chat.id,
-        action=ChatAction.TYPING
-    )
-    
-    # Verificar que es un enlace de IMDb válido
-    if not re.match(r'https?://(www\.)?imdb\.com/title/tt\d+/?.*', imdb_url):
-        await update.message.reply_text(
-            "❌ El enlace proporcionado no es un enlace válido de IMDb.\n"
-            "Debe tener el formato: https://www.imdb.com/title/tt??????/",
-            parse_mode=ParseMode.HTML
-        )
-        return
-    
-    # Extraer el ID de IMDb del enlace
-    imdb_id = re.search(r'tt\d+', imdb_url).group(0)
-    
-    try:
-        # Enviar mensaje de procesamiento
-        processing_msg = await update.message.reply_text(
-            "🔍 Procesando información de IMDb... Por favor espera.",
-            parse_mode=ParseMode.HTML
-        )
-        
-        # Método 1: Usar IMDbPY para obtener información
-        try:
-            # Obtener la película/serie por ID
-            movie = ia.get_movie(imdb_id[2:])  # Eliminar 'tt' del ID
-            
-            # Extraer información básica
-            title = movie.get('title', 'Título no disponible')
-            year = movie.get('year', 'Año no disponible')
-            rating = movie.get('rating', 'N/A')
-            genres = ', '.join(movie.get('genres', ['Género no disponible']))
-            plot = movie.get('plot outline', 'Sinopsis no disponible')
-            
-            # Obtener directores
-            directors = []
-            if 'directors' in movie:
-                directors = [director['name'] for director in movie['directors'][:3]]
-            directors_str = ', '.join(directors) if directors else 'No disponible'
-            
-            # Obtener actores principales
-            cast = []
-            if 'cast' in movie:
-                cast = [actor['name'] for actor in movie['cast'][:5]]
-            cast_str = ', '.join(cast) if cast else 'No disponible'
-            
-            # Construir mensaje
-            message = (
-                f"🎬 <b>{title}</b> ({year})\n\n"
-                f"⭐ <b>Calificación:</b> {rating}/10\n"
-                f"🎭 <b>Género:</b> {genres}\n"
-                f"🎬 <b>Director:</b> {directors_str}\n"
-                f"👥 <b>Reparto principal:</b> {cast_str}\n\n"
-                f"📝 <b>Sinopsis:</b>\n<blockquote expandable>{plot}</blockquote>\n\n"
-                f"🔗 <a href='{https://t.me/multimediatvOficial}'>MultimediaTv 📺</a>"
-            )
-            
-            # Obtener URL del póster si está disponible
-            poster_url = None
-            if 'cover url' in movie:
-                poster_url = movie['cover url']
-            
-        except Exception as e:
-            logger.error(f"Error usando IMDbPY: {e}")
-            
-            # Si falla IMDbPY, usar web scraping como método alternativo
-            try:
-                # Realizar la solicitud HTTP
-                response = requests.get(imdb_url, headers={'User-Agent': 'Mozilla/5.0'})
-                response.raise_for_status()  # Verificar que la solicitud fue exitosa
-                
-                # Parsear el HTML
-                soup = BeautifulSoup(response.text, 'html.parser')
-                
-                # Extraer información básica
-                title_elem = soup.select_one('h1')
-                title = title_elem.text.strip() if title_elem else 'Título no disponible'
-                
-                # Intentar obtener el año
-                year_elem = soup.select_one('span.TitleBlockMetaData__ListItemText-sc-12ein40-2')
-                year = year_elem.text.strip() if year_elem else 'Año no disponible'
-                
-                # Intentar obtener la calificación
-                rating_elem = soup.select_one('span.AggregateRatingButton__RatingScore-sc-1ll29m0-1')
-                rating = rating_elem.text.strip() if rating_elem else 'N/A'
-                
-                # Intentar obtener géneros
-                genres_elems = soup.select('span.ipc-chip__text')
-                genres = ', '.join([genre.text for genre in genres_elems[:3]]) if genres_elems else 'Género no disponible'
-                
-                # Intentar obtener la sinopsis
-                plot_elem = soup.select_one('span.GenresAndPlot__TextContainerBreakpointXL-sc-cum89p-2')
-                plot = plot_elem.text.strip() if plot_elem else 'Sinopsis no disponible'
-                
-                # Intentar obtener directores y reparto
-                credits_elems = soup.select('a.StyledComponents__ActorName-sc-y9ygcu-1')
-                cast_str = ', '.join([actor.text for actor in credits_elems[:5]]) if credits_elems else 'No disponible'
-                
-                # Construir mensaje
-                message = (
-                    f"🎬 <b>{title}</b> ({year})\n\n"
-                    f"⭐ <b>Calificación:</b> {rating}/10\n"
-                    f"🎭 <b>Género:</b> {genres}\n"
-                    f"👥 <b>Reparto:</b> {cast_str}\n\n"
-                    f"📝 <b>Sinopsis:</b>\n{plot}\n\n"
-                    f"🔗 <a href='{imdb_url}'>Ver en IMDb</a>"
-                )
-                
-                # Intentar obtener la URL del póster
-                poster_elem = soup.select_one('img.ipc-image')
-                poster_url = poster_elem['src'] if poster_elem and 'src' in poster_elem.attrs else None
-                
-            except Exception as scrape_error:
-                logger.error(f"Error en web scraping: {scrape_error}")
-                await processing_msg.edit_text(
-                    f"❌ Error al obtener información de IMDb: {str(e)[:100]}\n\n"
-                    f"Por favor, verifica que el enlace sea correcto y que IMDb esté accesible.",
-                    parse_mode=ParseMode.HTML
-                )
-                return
-        
-        # Enviar mensaje y póster si está disponible
-        if poster_url:
-            try:
-                # Descargar imagen del póster
-                poster_response = requests.get(poster_url)
-                poster_response.raise_for_status()
-                
-                # Enviar la imagen con la información como pie de foto
-                await context.bot.send_photo(
-                    chat_id=update.effective_chat.id,
-                    photo=BytesIO(poster_response.content),
-                    caption=message,
-                    parse_mode=ParseMode.HTML
-                )
-                
-                # Eliminar mensaje de procesamiento
-                await processing_msg.delete()
-                
-            except Exception as img_error:
-                logger.error(f"Error enviando imagen: {img_error}")
-                # Si falla el envío de la imagen, enviar solo el texto
-                await processing_msg.edit_text(
-                    text=message,
-                    parse_mode=ParseMode.HTML
-                )
-        else:
-            # Si no hay póster, enviar solo el texto
-            await processing_msg.edit_text(
-                text=message,
-                parse_mode=ParseMode.HTML
-            )
-    
-    except Exception as e:
-        logger.error(f"Error en comando imdb: {e}")
-        await processing_msg.edit_text(
-            f"❌ Error al procesar la información de IMDb: {str(e)[:100]}",
-            parse_mode=ParseMode.HTML
-        )
-
 # Función para buscar información de una película o serie en IMDb
 async def search_imdb_info(title):
     """Buscar información de una película o serie en IMDb por título"""
@@ -773,306 +592,6 @@ async def search_imdb_info(title):
         return None
 
 @check_channel_membership
-async def down_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Descarga y envía contenido de Picta.cu al chat."""
-    if not update.message:
-        return
-    
-    # Verificar si el usuario proporcionó un enlace
-    if not context.args:
-        await update.message.reply_text(
-            "Por favor, proporciona un enlace de Picta.cu.\n"
-            "Ejemplo: /down https://www.picta.cu/movie/memoria-caracol-dyw8jwyqfc79fhvc",
-            parse_mode=ParseMode.HTML
-        )
-        return
-    
-    # Obtener el enlace
-    picta_url = context.args[0]
-    
-    # Verificar que es un enlace de Picta.cu válido
-    if not re.match(r'https?://(www\.)?picta\.cu/(movie|serie)/.+', picta_url):
-        await update.message.reply_text(
-            "❌ El enlace proporcionado no es un enlace válido de Picta.cu.\n"
-            "Debe ser un enlace a una película o serie en Picta.",
-            parse_mode=ParseMode.HTML
-        )
-        return
-    
-    # Verificar el tipo de usuario para determinar límites y permisos
-    user_id = update.effective_user.id
-    user_data = db.get_user(user_id)
-    
-    # Verificar si el usuario tiene búsquedas disponibles
-    if not db.increment_daily_usage(user_id):
-        # Mostrar mensaje de límite alcanzado y opciones de planes
-        keyboard = []
-        for plan_id, plan in PLANS_INFO.items():
-            if plan_id != 'basic':
-                keyboard.append([
-                    InlineKeyboardButton(
-                        f"{plan['name']} - {plan['price']}",
-                        callback_data=f"buy_plan_{plan_id}"
-                    )
-                ])
-        
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await update.message.reply_text(
-            "❌ Has alcanzado tu límite de búsquedas diarias.\n\n"
-            "Para continuar descargando, adquiere un plan premium:",
-            reply_markup=reply_markup,
-            parse_mode=ParseMode.HTML
-        )
-        return
-    
-    # Enviar mensaje de procesamiento
-    status_message = await update.message.reply_text(
-        "🔍 Analizando el enlace de Picta... Por favor espera.",
-        parse_mode=ParseMode.HTML
-    )
-    
-    # Mostrar acción "subiendo video" mientras se procesa
-    await context.bot.send_chat_action(
-        chat_id=update.effective_chat.id,
-        action=ChatAction.UPLOAD_VIDEO
-    )
-    
-    try:
-        # Obtener información del video usando yt-dlp
-        await status_message.edit_text("⏳ Obteniendo información del contenido...",
-                                      parse_mode=ParseMode.HTML)
-        
-        with tempfile.TemporaryDirectory() as temp_dir:
-            ydl_opts = {
-                'format': 'best',
-                'outtmpl': f'{temp_dir}/%(title)s.%(ext)s',
-                'quiet': True,
-                'no_warnings': True,
-                'ignoreerrors': False,
-                'noplaylist': True,
-            }
-            
-            video_info = None
-            video_path = None
-            
-            try:
-                # Extraer información del video
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    video_info = await asyncio.to_thread(ydl.extract_info, picta_url, download=False)
-                    
-                    if not video_info:
-                        await status_message.edit_text(
-                            "❌ No se pudo obtener información del contenido. Es posible que no esté disponible.",
-                            parse_mode=ParseMode.HTML
-                        )
-                        return
-                    
-                    # Actualizar mensaje con información del contenido
-                    title = video_info.get('title', 'Contenido de Picta')
-                    await status_message.edit_text(
-                        f"📥 Descargando: <b>{title}</b>\n\n"
-                        f"⏳ Iniciando descarga... Esto puede tomar varios minutos dependiendo del tamaño.",
-                        parse_mode=ParseMode.HTML
-                    )
-                    
-                    # Descargar el video
-                    await asyncio.to_thread(ydl.download, [picta_url])
-                    
-                    # Encontrar el archivo descargado
-                    files = list(Path(temp_dir).glob('*'))
-                    if not files:
-                        await status_message.edit_text(
-                            "❌ Error: No se pudo descargar el archivo.",
-                            parse_mode=ParseMode.HTML
-                        )
-                        return
-                    
-                    video_path = str(files[0])
-                    
-                    # Verificar el tamaño del archivo
-                    file_size = os.path.getsize(video_path) / (1024 * 1024)  # en MB
-                    
-                    # Informar sobre el progreso
-                    await status_message.edit_text(
-                        f"📥 Descargando: <b>{title}</b>\n\n"
-                        f"✅ Descarga completada: {file_size:.1f} MB\n\n"
-                        f"⏳ Enviando a Telegram... Por favor espera.",
-                        parse_mode=ParseMode.HTML
-                    )
-                    
-                    # Enviar el archivo al chat
-                    with open(video_path, 'rb') as video_file:
-                        # Determinar si es una película o serie
-                        is_movie = 'movie' in picta_url
-                        file_type = "Película" if is_movie else "Serie"
-                        
-                        # Enviar el video
-                        await context.bot.send_video(
-                            chat_id=update.effective_chat.id,
-                            video=video_file,
-                            caption=f"🎬 <b>{title}</b>\n\n"
-                                   f"📂 <b>Tipo:</b> {file_type}\n"
-                                   f"🔗 <b>Fuente:</b> Picta.cu\n",
-                            parse_mode=ParseMode.HTML,
-                            supports_streaming=True,
-                            width=video_info.get('width'),
-                            height=video_info.get('height'),
-                            duration=video_info.get('duration'),
-                        )
-                        
-                        # Eliminar mensaje de estado
-                        await status_message.delete()
-                    
-            except Exception as e:
-                logger.error(f"Error en la descarga con yt-dlp: {e}")
-                logger.error(traceback.format_exc())
-                
-                # Intentar método alternativo si yt-dlp falla
-                await status_message.edit_text(
-                    "⚠️ Error con el método principal. Intentando método alternativo...",
-                    parse_mode=ParseMode.HTML
-                )
-                
-                try:
-                    # Intento alternativo usando requests y BeautifulSoup
-                    response = requests.get(picta_url, headers={'User-Agent': 'Mozilla/5.0'})
-                    response.raise_for_status()
-                    
-                    soup = BeautifulSoup(response.text, 'html.parser')
-                    
-                    # Buscar la URL del video
-                    video_src = None
-                    video_tags = soup.find_all('video')
-                    source_tags = soup.find_all('source')
-                    
-                    # Primero verificar las etiquetas <source>
-                    for source in source_tags:
-                        if 'src' in source.attrs:
-                            video_src = source['src']
-                            break
-                    
-                    # Si no, verificar las etiquetas <video>
-                    if not video_src:
-                        for video in video_tags:
-                            if 'src' in video.attrs:
-                                video_src = video['src']
-                                break
-                    
-                    # Si aún no hay URL, buscar en scripts
-                    if not video_src:
-                        scripts = soup.find_all('script')
-                        for script in scripts:
-                            script_text = script.string if script.string else ""
-                            # Buscar URLs de video en el JavaScript
-                            video_match = re.search(r'["\'](https?://.*?\.mp4)["\']', script_text)
-                            if video_match:
-                                video_src = video_match.group(1)
-                                break
-                    
-                    if not video_src:
-                        await status_message.edit_text(
-                            "❌ No se pudo encontrar el video en la página. El sitio puede haber cambiado su estructura.",
-                            parse_mode=ParseMode.HTML
-                        )
-                        return
-                    
-                    # Descargar el video
-                    await status_message.edit_text("📥 Descargando el video desde la URL encontrada...",
-                                                  parse_mode=ParseMode.HTML)
-                                       
-                    # Determinar el nombre del archivo
-                    parsed_url = urlparse(video_src)
-                    file_name = os.path.basename(parsed_url.path)
-                    if not file_name or not file_name.endswith(('.mp4', '.mkv', '.avi', '.mov')):
-                        file_name = "video_picta.mp4"
-                    
-                    video_path = f"{temp_dir}/{file_name}"
-                    
-                    # Descargar con requests
-                    with requests.get(video_src, stream=True, headers={'User-Agent': 'Mozilla/5.0'}) as r:
-                        r.raise_for_status()
-                        total_size = int(r.headers.get('content-length', 0))
-                        total_size_mb = total_size / (1024 * 1024)
-                        
-                        # Actualizar mensaje con tamaño total
-                        await status_message.edit_text(
-                            f"📥 Descargando video...\n\n"
-                            f"💾 Tamaño total: {total_size_mb:.1f} MB",
-                            parse_mode=ParseMode.HTML
-                        )
-                        
-                        # Descargar en chunks para archivos grandes
-                        downloaded = 0
-                        last_percent = 0
-                        with open(video_path, 'wb') as f:
-                            for chunk in r.iter_content(chunk_size=8192):
-                                if chunk:
-                                    f.write(chunk)
-                                    downloaded += len(chunk)
-                                    
-                                    # Actualizar progreso cada 10%
-                                    percent = int(downloaded * 100 / total_size)
-                                    if percent >= last_percent + 10:
-                                        last_percent = percent
-                                        await status_message.edit_text(
-                                            f"📥 Descargando video...\n\n"
-                                            f"💾 Tamaño total: {total_size_mb:.1f} MB\n"
-                                            f"⏳ Progreso: {percent}%",
-                                            parse_mode=ParseMode.HTML
-                                        )
-                    
-                    # Obtener título de la página
-                    title_tag = soup.find('title')
-                    title = title_tag.text if title_tag else "Contenido de Picta"
-                    title = title.replace(" - Picta", "").strip()
-                    
-                    # Informar finalización de descarga
-                    await status_message.edit_text(
-                        f"📥 Descargando: <b>{title}</b>\n\n"
-                        f"✅ Descarga completada: {total_size_mb:.1f} MB\n\n"
-                        f"⏳ Enviando a Telegram... Por favor espera.",
-                        parse_mode=ParseMode.HTML
-                    )
-                    
-                    # Determinar si es una película o serie
-                    is_movie = 'movie' in picta_url
-                    file_type = "Película" if is_movie else "Serie"
-                    
-                    # Enviar el video
-                    with open(video_path, 'rb') as video_file:
-                        await context.bot.send_video(
-                            chat_id=update.effective_chat.id,
-                            video=video_file,
-                            caption=f"🎬 <b>{title}</b>\n\n"
-                                   f"📂 <b>Tipo:</b> {file_type}\n"
-                                   f"🔗 <b>Fuente:</b> Picta.cu\n",
-                            parse_mode=ParseMode.HTML,
-                            supports_streaming=True
-                        )
-                        
-                        # Eliminar mensaje de estado
-                        await status_message.delete()
-                
-                except Exception as alt_e:
-                    logger.error(f"Error en método alternativo: {alt_e}")
-                    logger.error(traceback.format_exc())
-                    await status_message.edit_text(
-                        f"❌ No se pudo descargar el contenido: {str(alt_e)[:100]}\n\n"
-                        f"Por favor, verifica que el enlace sea correcto y que el contenido esté disponible.",
-                        parse_mode=ParseMode.HTML
-                    )
-    
-    except Exception as e:
-        logger.error(f"Error general en down_command: {e}")
-        logger.error(traceback.format_exc())
-        await status_message.edit_text(
-            f"❌ Error al procesar la descarga: {str(e)[:100]}\n\n"
-            f"Por favor, intenta más tarde o con otro enlace.",
-            parse_mode=ParseMode.HTML
-        )
-
-@check_channel_membership
 async def search_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Search for content in the channel based on user query."""
     if not update.message:
@@ -1118,7 +637,7 @@ async def search_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         
         await update.message.reply_text(
             "❌ Has alcanzado tu límite de búsquedas diarias.\n\n"
-            "Para continuar buscando, adquiere un plan premium:",
+            "<blockquote>Para continuar buscando, adquiere un plan premium:</blockquote>",
             reply_markup=reply_markup,
             parse_mode=ParseMode.HTML
         )
@@ -1133,7 +652,7 @@ async def search_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Initialize user preferences if not exist
     if user_id not in user_preferences:
         user_preferences[user_id] = {
-            "max_results": 5,
+            "max_results": 100
             "show_previews": True,
             "sort_by_date": True
         }
@@ -1511,10 +1030,10 @@ async def send_search_results(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         await status_message.edit_text(
             f"No se encontraron resultados para '{query}'.\n\n"
-            f"Comprueba que escribes el nombre correctamente o utiliza variaciones del mismo. "
+            f"<blockquote>Comprueba que escribes el nombre correctamente o utiliza variaciones del mismo. "
             f"Prueba escribiendo el nombre en el idioma oficial o español o solamente pon una palabra clave.\n"
             f"¿Quieres hacer un pedido?\n"
-            f"Selecciona el tipo y haz clic en 'Hacer pedido'.",
+            f"Selecciona el tipo y haz clic en 'Hacer pedido'.</blockquote>",
             reply_markup=reply_markup
         )
 
@@ -1677,7 +1196,7 @@ async def handle_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Create profile message with real-time limits
     profile_text = (
         f"👤 <b>Perfil de Usuario</b>\n\n"
-        f"Nombre: {query.from_user.first_name}\n"
+        f"<blockquote>Nombre: {query.from_user.first_name}\n"
         f"Saldo: {user_data.get('balance', 0)} 💎\n"
         f"ID: {user_id}\n"
         f"Plan: {plan_name}\n"
@@ -1686,7 +1205,7 @@ async def handle_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Búsquedas restantes: {searches_remaining_text}\n"
         f"Fecha de Unión: {join_date}\n"
         f"Referidos: {referral_count}\n"
-        f"Reinicio en: {reset_text}\n\n"
+        f"Reinicio en: {reset_text}\n\n</blockquote>"
         f"🎁 Comparte tu enlace de referido y gana diamantes!"
     )
     
@@ -1728,7 +1247,7 @@ async def handle_plans(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"▧ Planes de Suscripción ▧\n\n"
         f"Tu saldo actual: {user_data.get('balance', 0)} 💎\n"
         f"Plan actual: {plan_name}\n\n"
-        f"📋 Planes Disponibles:\n\n"
+        f"<blockquote>📋 Planes Disponibles:\n\n</blockquote>"
         f"Pro (169.99 | 29 ⭐)\n"
         f"169.99 CUP\n"
         f"0.49 USD\n\n"
@@ -1738,7 +1257,7 @@ async def handle_plans(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Ultra (1049.99 | 176 ⭐)\n"
         f"1049.99 CUP\n"
         f"2.99 USD\n\n"
-        f"Pulsa los botones de debajo para mas info de los planes y formas de pago."
+        f"<blockquote>Pulsa los botones de debajo para mas info de los planes y formas de pago.</blockquote>"
     )
     
     # Create buttons
@@ -1848,18 +1367,14 @@ async def handle_payment_method(update: Update, context: ContextTypes.DEFAULT_TY
     if payment_method == "cup":
         if plan_type == "plan_pro":
             payment_info = (
-                f"<blockquote>"
-                f"<b>Pago en CUP (Transferencia)</b>\n"
-                f"Precio: 169.99 CUP\n"
-                f"</blockquote>"
-                f"<blockquote>"
-                f"<b>Pago en CUP (Saldo)</b>\n"
-                f"Precio: 189.99 CUP\n"
-                f"</blockquote>"
+                f"<blockquote><b>Pago en CUP (Transferencia)</b>\n"
+                f"Precio: 169.99 CUP\n</blockquote>"
+                f"<blockquote><b>Pago en CUP (Saldo)</b>\n"
+                f"Precio: 189.99 CUP\n</blockquote>"
                 f"Detalles de pago:\n"
-                f"Número: `9205 1299 7736 4067`\n"
-                f"Telef: `55068190`\n\n"
-                f"⚠️ Después de realizar el pago, mandar captura del pago a @osvaldo20032 para activar tu plan."
+                f"Número: 9205 1299 7736 4067\n"
+                f"Telef: 55068190\n\n"
+                f"<blockquote>⚠️ Después de realizar el pago, mandar captura del pago a @osvaldo20032 para activar tu plan.</blockquote>"
             )
         elif plan_type == "plan_plus":
             payment_info = (
@@ -1868,9 +1383,9 @@ async def handle_payment_method(update: Update, context: ContextTypes.DEFAULT_TY
                 f"<b>Pago en CUP (Saldo)</b>\n"
                 f"Precio: 669.99 CUP\n"
                 f"Detalles de pago:\n"
-                f"Número: 9205 1299 7736 4067\n"
-                f"Telef: 55068190\n\n"
-                f"⚠️ Después de realizar el pago, mandar captura del pago a @osvaldo20032 para activar tu plan."
+                f"Número: `9205 1299 7736 4067`\n"
+                f"Telef: `55068190`\n\n"
+                f"<blockquote>⚠️ Después de realizar el pago, mandar captura del pago a @osvaldo20032 para activar tu plan.</blockquote>"
             )
         elif plan_type == "plan_ultra":
             payment_info = (
