@@ -59,10 +59,11 @@ SEARCH_CHANNEL_ID = -1002302159104
 # Add this at the top with other constants
 PLANS_INFO = PLANS
 
-# Constantes y variables globales para el sistema de series
-UPSER_STATE_IDLE = 0        # No hay carga de serie en proceso
-UPSER_STATE_RECEIVING = 1   # Recibiendo capítulos
-UPSER_STATE_COVER = 2       # Esperando la portada con descripción
+# Constantes para el sistema de carga masiva
+LOAD_STATE_INACTIVE = 0     # No hay carga masiva en proceso
+LOAD_STATE_WAITING_NAME = 1 # Esperando nombre del contenido
+LOAD_STATE_WAITING_FILES = 2 # Esperando archivos después de recibir nombre
+LOAD_STATE_FINISHING = 3    # Finalizando el procesamiento de la serie/película actual
 
 # Constantes para el sistema de carga masiva
 LOAD_STATE_INACTIVE = 0     # No hay carga masiva en proceso
@@ -622,25 +623,41 @@ async def load_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     # Obtener el estado actual de carga
     load_state = context.bot_data.get('load_state', LOAD_STATE_INACTIVE)
     
+    # Si estamos esperando finalizar una serie/película
+    if load_state == LOAD_STATE_WAITING_FILES:
+        # Finalizar la carga actual y procesarla
+        await finalize_current_content(update, context)
+        # Volver al estado de esperar nombre para el siguiente contenido
+        context.bot_data['load_state'] = LOAD_STATE_WAITING_NAME
+        await update.message.reply_text(
+            "<blockquote>✅ Contenido actual finalizado. Ahora puedes enviar el nombre del próximo contenido.</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        return
+    
     # Si estamos inactivos, iniciar el proceso
     if load_state == LOAD_STATE_INACTIVE:
         # Inicializar estructura de datos para carga masiva
         context.bot_data['load_state'] = LOAD_STATE_WAITING_NAME
         context.bot_data['load_queue'] = []  # Cola de contenido pendiente
-        context.bot_data['load_processing'] = False  # Control para evitar procesamiento simultáneo
-        context.bot_data['load_failed'] = []  # Lista de elementos que fallaron
-        context.bot_data['current_content'] = None  # Contenido actualmente en proceso
-        context.bot_data['current_name_info'] = None  # Información ya buscada para el próximo archivo
+        context.bot_data['current_content'] = {
+            'name': None,
+            'imdb_info': None,
+            'files': [],
+            'content_type': 'movie',  # Por defecto película, puede cambiar
+            'season_num': None,
+            'title': None
+        }
         
         await update.message.reply_text(
             "<blockquote>📥 <b>Modo de carga masiva activado</b>\n\n"
             "1️⃣ Envía primero el nombre exacto del contenido\n"
             "2️⃣ El bot buscará información en IMDb\n"
-            "3️⃣ Luego envía el archivo de la película o serie\n"
-            "4️⃣ Para series, si el archivo tiene nombre como '1x1', el bot usará el nombre buscado\n"
-            "5️⃣ Para finalizar la carga masiva, envía /load nuevamente\n\n"
-            "✅ El bot buscará automáticamente información e imágenes para cada contenido\n"
-            "⏳ Esperando nombre del primer contenido...</blockquote>",
+            "3️⃣ Luego envía todos los archivos de la película o capítulos de la serie\n"
+            "4️⃣ Envía /load nuevamente para finalizar este contenido y pasar al siguiente\n"
+            "5️⃣ Repite el proceso para cada contenido\n"
+            "6️⃣ Para finalizar el modo de carga masiva, envía /load cuando no hay contenido pendiente\n\n"
+            "✅ El bot procesará todo con efectos visuales como el comando /upser</blockquote>",
             parse_mode=ParseMode.HTML
         )
         
@@ -652,49 +669,28 @@ async def load_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         
         # Guardar referencia al mensaje de estado
         context.bot_data['load_status_message'] = status_msg
+        return
     
-    # Si ya estamos en proceso, finalizar
-    else:
-        # Obtener información actual
-        queue_length = len(context.bot_data.get('load_queue', []))
-        failed_items = len(context.bot_data.get('load_failed', []))
-        is_processing = context.bot_data.get('load_processing', False)
-        
+    # Si ya estamos en proceso de carga y no hay contenido activo, finalizar modo carga
+    if load_state == LOAD_STATE_WAITING_NAME:
         # Verificar si hay elementos pendientes
-        if queue_length > 0 or is_processing:
+        current_content = context.bot_data.get('current_content', {})
+        if current_content.get('files'):
+            # Aún hay archivos sin procesar
             await update.message.reply_text(
-                f"<blockquote>⚠️ Aún hay {queue_length} elementos en cola y "
-                f"{'un proceso activo' if is_processing else 'ningún proceso activo'}.\n\n"
-                f"Por favor, espera a que se complete el procesamiento antes de cerrar.</blockquote>",
+                "<blockquote>⚠️ Hay contenido pendiente por procesar.\n"
+                "Envía /load después de enviar el nombre de un contenido para finalizar ese contenido específico.</blockquote>",
                 parse_mode=ParseMode.HTML
             )
             return
-        
-        # Reiniciar variables
+            
+        # Finalizar el modo de carga
         context.bot_data['load_state'] = LOAD_STATE_INACTIVE
-        failed_content = context.bot_data.get('load_failed', [])
         
         # Informar sobre resultado final
-        summary = f"<blockquote>✅ <b>Carga masiva finalizada</b>\n\n"
-        
-        # Informar sobre elementos fallidos
-        if failed_items > 0:
-            summary += f"⚠️ {failed_items} elementos no pudieron ser procesados:\n"
-            for i, item in enumerate(failed_content[:10], 1):  # Mostrar solo los primeros 10
-                if 'title' in item:
-                    summary += f"   {i}. {item['title']}\n"
-                else:
-                    summary += f"   {i}. (Contenido sin título)\n"
-            
-            if failed_items > 10:
-                summary += f"   ...y {failed_items - 10} más\n"
-        else:
-            summary += "✅ Todo el contenido fue procesado correctamente\n"
-        
-        summary += "</blockquote>"
-        
         await update.message.reply_text(
-            summary,
+            "<blockquote>✅ <b>Modo de carga masiva finalizado</b>\n\n"
+            "Puedes iniciar una nueva sesión de carga con /load cuando lo necesites.</blockquote>",
             parse_mode=ParseMode.HTML
         )
         
@@ -709,12 +705,8 @@ async def load_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             except Exception as e:
                 logger.error(f"Error al actualizar mensaje de estado final: {e}")
         
-        context.bot_data.pop('load_queue', None)
-        context.bot_data.pop('load_processing', None)
-        context.bot_data.pop('load_failed', None)
-        context.bot_data.pop('load_status_message', None)
         context.bot_data.pop('current_content', None)
-        context.bot_data.pop('current_name_info', None)
+        context.bot_data.pop('load_status_message', None)
 
 async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manejar recepción de nombre de contenido en modo carga masiva"""
@@ -742,28 +734,26 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
         # Buscar información en IMDb
         imdb_info = await search_imdb_info(content_name)
         
+        # Inicializar el contenido actual
+        current_content = {
+            'name': content_name,
+            'imdb_info': imdb_info or {},
+            'files': [],
+            'content_type': 'movie',  # Por defecto película, puede cambiar
+            'season_num': None,
+            'title': content_name
+        }
+        
+        context.bot_data['current_content'] = current_content
+        
         if not imdb_info:
             # No se encontró información
             await status_msg.edit_text(
                 f"<blockquote>⚠️ No se encontró información en IMDb para <b>{content_name}</b>.\n"
-                f"Puedes intentar con otro nombre o enviar el archivo directamente.\n"
-                f"El contenido será procesado con información básica.</blockquote>",
+                f"Continuaremos con información básica.\n"
+                f"Ahora envía los archivos del contenido.</blockquote>",
                 parse_mode=ParseMode.HTML
             )
-            
-            # Guardar información básica
-            context.bot_data['current_name_info'] = {
-                'title': content_name,
-                'year': 'N/A',
-                'rating': 'N/A',
-                'genres': 'Sin información',
-                'directors': 'Sin información',
-                'cast': 'Sin información',
-                'plot': 'Sin información disponible',
-                'url': '',
-                'poster_url': None,
-                'found': False
-            }
         else:
             # Se encontró información, descargar póster si está disponible
             await status_msg.edit_text(
@@ -773,9 +763,8 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
                 parse_mode=ParseMode.HTML
             )
             
-            # Guardar la información encontrada
-            context.bot_data['current_name_info'] = imdb_info
-            context.bot_data['current_name_info']['found'] = True
+            # Actualizar el título en el contenido actual
+            current_content['title'] = imdb_info['title']
             
             # Preparar mensaje para el administrador
             if imdb_info['poster_url']:
@@ -790,7 +779,9 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
                         f"✅ <b>{imdb_info['title']}</b> ({imdb_info['year']})\n\n"
                         f"⭐ <b>Calificación:</b> {imdb_info['rating']}/10\n"
                         f"🎭 <b>Género:</b> {imdb_info['genres']}\n\n"
-                        f"<blockquote>Ahora envía el archivo del contenido</blockquote>"
+                        f"<blockquote>Ahora envía todos los archivos del contenido.\n"
+                        f"Si es una serie, envía todos los capítulos en orden.\n"
+                        f"Cuando termines, envía /load nuevamente para procesar este contenido.</blockquote>"
                     )
                     
                     await context.bot.send_photo(
@@ -808,19 +799,21 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
                     await status_msg.edit_text(
                         f"<blockquote>✅ Información encontrada: <b>{imdb_info['title']} ({imdb_info['year']})</b>\n"
                         f"⚠️ No se pudo descargar póster para vista previa\n"
-                        f"Ahora envía el archivo del contenido</blockquote>",
+                        f"Ahora envía los archivos del contenido.\n"
+                        f"Cuando termines, envía /load nuevamente.</blockquote>",
                         parse_mode=ParseMode.HTML
                     )
             else:
                 await status_msg.edit_text(
                     f"<blockquote>✅ Información encontrada: <b>{imdb_info['title']} ({imdb_info['year']})</b>\n"
                     f"⚠️ No se encontró póster para este contenido\n"
-                    f"Ahora envía el archivo del contenido</blockquote>",
+                    f"Ahora envía los archivos del contenido.\n"
+                    f"Cuando termines, envía /load nuevamente.</blockquote>",
                     parse_mode=ParseMode.HTML
                 )
         
-        # Cambiar estado a esperar archivo
-        context.bot_data['load_state'] = LOAD_STATE_WAITING_FILE
+        # Cambiar estado a esperar archivos
+        context.bot_data['load_state'] = LOAD_STATE_WAITING_FILES
         
         # Actualizar mensaje de estado general
         await update_load_status_message(update, context)
@@ -829,11 +822,23 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
         logger.error(f"Error buscando información para {content_name}: {e}")
         await status_msg.edit_text(
             f"<blockquote>❌ Error al buscar información para <b>{content_name}</b>: {str(e)[:100]}\n"
-            f"Envía otro nombre o el archivo directamente.</blockquote>",
+            f"Continuaremos con información básica.\n"
+            f"Ahora envía los archivos del contenido.</blockquote>",
             parse_mode=ParseMode.HTML
         )
-        # Mantener el estado de espera de nombre
-        return HANDLER_STOP
+        
+        # Inicializar contenido actual con información básica
+        context.bot_data['current_content'] = {
+            'name': content_name,
+            'imdb_info': {},
+            'files': [],
+            'content_type': 'movie',
+            'season_num': None,
+            'title': content_name
+        }
+        
+        # Cambiar estado a esperar archivos
+        context.bot_data['load_state'] = LOAD_STATE_WAITING_FILES
 
 async def handle_load_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manejar la recepción de archivos durante el modo de carga masiva"""
@@ -843,43 +848,38 @@ async def handle_load_content(update: Update, context: ContextTypes.DEFAULT_TYPE
     if user.id != ADMIN_ID:
         return
     
-    # Verificar si estamos en modo de carga masiva esperando archivo
+    # Verificar si estamos en modo de carga masiva esperando archivos
     load_state = context.bot_data.get('load_state', LOAD_STATE_INACTIVE)
-    if load_state != LOAD_STATE_WAITING_FILE:
-        return  # No estamos esperando archivo
+    if load_state != LOAD_STATE_WAITING_FILES:
+        return  # No estamos esperando archivos
     
     # Detectar si es un video, documento u otro contenido multimedia
     if update.message.video or update.message.document:
-        # Extraer información del contenido
+        # Extraer información del archivo
         message_id = update.message.message_id
         chat_id = update.effective_chat.id
         caption = update.message.caption or ""
         file_name = update.message.document.file_name if update.message.document else None
         
-        # Obtener la información ya buscada
-        name_info = context.bot_data.get('current_name_info', None)
-        
-        if not name_info:
-            # No tenemos información previa, esto no debería ocurrir
+        # Obtener el contenido actual
+        current_content = context.bot_data.get('current_content', {})
+        if not current_content:
             await update.message.reply_text(
-                "<blockquote>❌ Error: No se encontró información previa para este archivo.\n"
-                "Por favor, envía primero el nombre del contenido.</blockquote>",
+                "<blockquote>❌ Error: No hay información de contenido actual.\n"
+                "Inicia el proceso nuevamente con /load.</blockquote>",
                 parse_mode=ParseMode.HTML
             )
             return
         
-        # Determinar si es una película o serie basándonos en el archivo y caption
-        content_type = "movie"  # Por defecto película
-        
-        # Buscar patrones de serie en el nombre del archivo
+        # Determinar si esto es una serie basado en patrones en el nombre del archivo o caption
         season_episode_pattern = re.search(r'S(\d+)E(\d+)|(\d+)x(\d+)', file_name or caption or '', re.IGNORECASE)
         
         if "#serie" in caption.lower() or "#series" in caption.lower() or season_episode_pattern:
-            content_type = "series"
+            current_content['content_type'] = 'series'
             
             # Extraer temporada y episodio si están disponibles
             season_num = 1
-            episode_num = 1
+            episode_num = len(current_content['files']) + 1  # Por defecto, siguiente número
             
             if season_episode_pattern:
                 # Formato S01E01
@@ -890,64 +890,251 @@ async def handle_load_content(update: Update, context: ContextTypes.DEFAULT_TYPE
                 elif season_episode_pattern.group(3) and season_episode_pattern.group(4):
                     season_num = int(season_episode_pattern.group(3))
                     episode_num = int(season_episode_pattern.group(4))
-                
-                # Crear título formateado para series
-                title = f"{name_info['title']} - S{season_num:02d}E{episode_num:02d}"
-            else:
-                title = name_info['title']
-        else:
-            # Es una película, usar título directo
-            title = name_info['title']
+            
+            # Actualizar número de temporada en el contenido actual
+            if 'season_num' not in current_content or current_content['season_num'] is None:
+                current_content['season_num'] = season_num
         
         # Limpiar caption de links y otros elementos
         clean_caption = clean_content_metadata(caption)
         
-        # Crear objeto de contenido con la información de IMDb y del archivo
-        content = {
+        # Crear objeto para este archivo
+        file_data = {
             'message_id': message_id,
             'chat_id': chat_id,
             'caption': clean_caption,
             'file_name': file_name,
-            'title': title,
-            'content_type': content_type,
-            'imdb_info': name_info,
-            'season_num': season_num if content_type == "series" else None,
-            'episode_num': episode_num if content_type == "series" else None
+            'episode_num': episode_num if current_content['content_type'] == 'series' else None
         }
         
-        # Añadir a la cola de procesamiento
-        context.bot_data.setdefault('load_queue', []).append(content)
+        # Añadir a los archivos del contenido actual
+        current_content['files'].append(file_data)
         
         # Informar al administrador
-        await update.message.reply_text(
-            f"<blockquote>📥 Archivo recibido para: <b>{title}</b>\n"
-            f"Tipo: {'Serie' if content_type == 'series' else 'Película'}\n"
-            f"Añadido a la cola de procesamiento.\n\n"
-            f"Ahora puedes enviar el nombre del próximo contenido.</blockquote>",
-            parse_mode=ParseMode.HTML
-        )
-        
-        # Volver al estado de esperar nombre para el siguiente contenido
-        context.bot_data['load_state'] = LOAD_STATE_WAITING_NAME
-        context.bot_data['current_name_info'] = None
+        if current_content['content_type'] == 'series':
+            await update.message.reply_text(
+                f"<blockquote>📥 Capítulo {episode_num} recibido para: <b>{current_content['title']}</b>\n"
+                f"Total de capítulos: {len(current_content['files'])}\n\n"
+                f"Envía más capítulos o /load para finalizar esta serie.</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+        else:
+            await update.message.reply_text(
+                f"<blockquote>📥 Archivo recibido para: <b>{current_content['title']}</b>\n"
+                f"Total de archivos: {len(current_content['files'])}\n\n"
+                f"Envía más partes o /load para finalizar esta película.</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
         
         # Actualizar mensaje de estado
         await update_load_status_message(update, context)
+
+async def finalize_current_content(update, context):
+    """Finalizar y procesar el contenido actual"""
+    # Obtener el contenido actual
+    current_content = context.bot_data.get('current_content', {})
+    
+    if not current_content or not current_content.get('files'):
+        await update.message.reply_text(
+            "<blockquote>⚠️ No hay archivos para procesar.</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        return
+    
+    # Crear un mensaje de estado para este procesamiento
+    status_message = await update.message.reply_text(
+        f"<blockquote>⏳ Procesando <b>{current_content['title']}</b>...</blockquote>",
+        parse_mode=ParseMode.HTML
+    )
+    
+    try:
+        # Obtener información de IMDb
+        imdb_info = current_content.get('imdb_info', {})
         
-        # Iniciar procesamiento si no está activo ya
-        if not context.bot_data.get('load_processing', False):
-            context.bot_data['load_processing'] = True
-            # Iniciar procesamiento asíncrono
-            asyncio.create_task(process_load_queue(update, context))
+        # Crear descripción para el post
+        if imdb_info:
+            description = (
+                f"<b>{imdb_info.get('title', current_content['title'])}</b> "
+                f"({imdb_info.get('year', 'N/A')})\n\n"
+                f"⭐ <b>Calificación:</b> {imdb_info.get('rating', 'N/A')}/10\n"
+                f"🎭 <b>Género:</b> {imdb_info.get('genres', 'No disponible')}\n"
+                f"🎬 <b>Director:</b> {imdb_info.get('directors', 'No disponible')}\n"
+                f"👥 <b>Reparto:</b> {imdb_info.get('cast', 'No disponible')}\n\n"
+                f"📝 <b>Sinopsis:</b>\n<blockquote>{imdb_info.get('plot', 'No disponible')}</blockquote>\n\n"
+            )
+            
+            if imdb_info.get('url'):
+                description += f"🔗 <a href='{imdb_info['url']}'>Ver en IMDb</a>"
+        else:
+            description = (
+                f"<b>{current_content['title']}</b>\n\n"
+                f"<blockquote>No se encontró información adicional para este contenido.</blockquote>"
+            )
+        
+        # Descargar póster si está disponible
+        cover_photo = None
+        
+        if imdb_info and imdb_info.get('poster_url'):
+            await status_message.edit_text(
+                f"<blockquote>📥 Descargando póster para <b>{current_content['title']}</b>...</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+            
+            try:
+                poster_response = requests.get(imdb_info['poster_url'])
+                poster_response.raise_for_status()
+                poster_bytes = BytesIO(poster_response.content)
+                
+                # Enviar temporalmente para obtener el file_id
+                temp_cover = await update.effective_chat.send_photo(
+                    photo=poster_bytes,
+                    caption="Imagen temporal para obtener ID",
+                    disable_notification=True
+                )
+                
+                # Guardar el file_id y eliminar el mensaje temporal
+                cover_photo = temp_cover.photo[-1].file_id
+                await temp_cover.delete()
+                
+            except Exception as e:
+                logger.error(f"Error descargando póster: {e}")
+                await status_message.edit_text(
+                    f"<blockquote>⚠️ Error al descargar póster para {current_content['title']}\n"
+                    f"Continuando sin póster...</blockquote>",
+                    parse_mode=ParseMode.HTML
+                )
+                return
+        
+        if not cover_photo:
+            # No se pudo obtener póster
+            await status_message.edit_text(
+                f"<blockquote>⚠️ No se pudo obtener póster para <b>{current_content['title']}</b>\n"
+                f"No se puede continuar sin imagen de portada.</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+            return
+        
+        # Crear un identificador único para este contenido
+        unique_id = int(time.time())
+        
+        # Determinar si es serie o película
+        is_series = current_content['content_type'] == 'series'
+        
+        await status_message.edit_text(
+            f"<blockquote>📤 Subiendo <b>{current_content['title']}</b> a los canales...</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        
+        # 1. Subir la portada con descripción al canal de búsqueda
+        sent_cover = await context.bot.send_photo(
+            chat_id=SEARCH_CHANNEL_ID,
+            photo=cover_photo,
+            caption=description,
+            parse_mode=ParseMode.HTML
+        )
+        
+        search_channel_cover_id = sent_cover.message_id
+        
+        # 2. Subir todos los archivos al canal de búsqueda
+        search_message_ids = []
+        for i, file in enumerate(current_content['files']):
+            # Obtener el mensaje original
+            search_message = await context.bot.copy_message(
+                chat_id=SEARCH_CHANNEL_ID,
+                from_chat_id=file['chat_id'],
+                message_id=file['message_id'],
+                disable_notification=True
+            )
+            
+            search_message_ids.append(search_message.message_id)
+        
+        # 3. Generar URL para botón "Ver ahora"
+        if is_series:
+            view_url = f"https://t.me/MultimediaTVbot?start=series_{unique_id}"
+        else:
+            # Si es película, usar el ID del primer mensaje
+            view_url = f"https://t.me/MultimediaTVbot?start=content_{search_message_ids[0]}"
+        
+        # 4. Crear botón para la portada
+        keyboard = [
+            [InlineKeyboardButton("Ver ahora", url=view_url)]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # 5. Actualizar la portada en el canal de búsqueda con el botón
+        await context.bot.edit_message_reply_markup(
+            chat_id=SEARCH_CHANNEL_ID,
+            message_id=search_channel_cover_id,
+            reply_markup=reply_markup
+        )
+        
+        # 6. Enviar portada al canal principal (SOLO LA PORTADA CON BOTÓN)
+        sent_cover_main = await context.bot.send_photo(
+            chat_id=CHANNEL_ID,
+            photo=cover_photo,
+            caption=description,
+            parse_mode=ParseMode.HTML
+        )
+        
+        # 7. Actualizar la portada en el canal principal con el mismo botón
+        await context.bot.edit_message_reply_markup(
+            chat_id=CHANNEL_ID,
+            message_id=sent_cover_main.message_id,
+            reply_markup=reply_markup
+        )
+        
+        # 8. Si es una serie, guardar en la base de datos
+        if is_series:
+            # Guardar la serie
+            db.add_series(
+                series_id=unique_id,
+                title=imdb_info.get('title', current_content['title']),
+                description=description,
+                cover_message_id=search_channel_cover_id,
+                added_by=update.effective_user.id
+            )
+            
+            # Guardar cada episodio
+            for i, (file, msg_id) in enumerate(zip(current_content['files'], search_message_ids)):
+                episode_num = file.get('episode_num', i + 1)
+                db.add_episode(
+                    series_id=unique_id,
+                    episode_number=episode_num,
+                    message_id=msg_id
+                )
+        
+        # 9. Informar éxito
+        await status_message.edit_text(
+            f"<blockquote>✅ <b>{current_content['title']}</b> procesado correctamente\n"
+            f"Tipo: {'Serie' if is_series else 'Película'}\n"
+            f"Archivos: {len(current_content['files'])}\n"
+            f"✅ Portada subida a canal principal\n"
+            f"✅ Todo el contenido subido a canal de búsqueda</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        
+        # Reiniciar el contenido actual
+        context.bot_data['current_content'] = {
+            'name': None,
+            'imdb_info': None,
+            'files': [],
+            'content_type': 'movie',
+            'season_num': None,
+            'title': None
+        }
+        
+    except Exception as e:
+        logger.error(f"Error en finalize_current_content: {e}")
+        await status_message.edit_text(
+            f"<blockquote>❌ Error procesando el contenido: {str(e)[:100]}\n"
+            f"Intenta nuevamente.</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
 
 async def update_load_status_message(update, context):
     """Actualizar el mensaje de estado con la información actual del proceso"""
     # Obtener datos actuales
-    queue = context.bot_data.get('load_queue', [])
-    queue_length = len(queue)
-    failed_items = len(context.bot_data.get('load_failed', []))
-    current_content = context.bot_data.get('current_content', None)
-    is_processing = context.bot_data.get('load_processing', False)
+    current_content = context.bot_data.get('current_content', {})
     load_state = context.bot_data.get('load_state', LOAD_STATE_INACTIVE)
     
     # Crear mensaje de estado
@@ -955,35 +1142,19 @@ async def update_load_status_message(update, context):
     
     if load_state == LOAD_STATE_WAITING_NAME:
         status += "⏳ <b>Esperando:</b> Nombre del próximo contenido\n\n"
-    elif load_state == LOAD_STATE_WAITING_FILE:
-        name_info = context.bot_data.get('current_name_info', {})
-        title = name_info.get('title', 'Desconocido')
-        status += f"⏳ <b>Esperando:</b> Archivo para <b>{title}</b>\n\n"
-    
-    if current_content:
-        status += f"🔄 <b>Procesando:</b> {current_content.get('title', 'Desconocido')}\n"
-    elif is_processing:
-        status += "🔄 <b>Procesando:</b> Iniciando próximo elemento...\n"
-    
-    status += f"📋 <b>En cola:</b> {queue_length} elementos\n"
-    
-    if failed_items > 0:
-        status += f"⚠️ <b>Fallidos:</b> {failed_items} elementos\n"
-    
-    # Mostrar elementos en cola (máximo 5)
-    if queue_length > 0:
-        status += "\n<b>Próximos elementos:</b>\n"
-        for i, item in enumerate(queue[:5], 1):
-            title = item.get('title', 'Sin título')
-            content_type = "Serie" if item.get('content_type') == 'series' else "Película"
-            status += f"{i}. {title} ({content_type})\n"
+    elif load_state == LOAD_STATE_WAITING_FILES:
+        title = current_content.get('title', 'Desconocido')
+        files_count = len(current_content.get('files', []))
+        content_type = "Serie" if current_content.get('content_type') == 'series' else "Película"
         
-        if queue_length > 5:
-            status += f"... y {queue_length - 5} más\n"
-    
-    if not is_processing and load_state == LOAD_STATE_WAITING_NAME and queue_length == 0:
-        status += "\n✅ <b>Todo el contenido ha sido procesado</b>\n"
-        status += "Envía /load nuevamente para finalizar el modo de carga."
+        status += f"📝 <b>Contenido actual:</b> {title}\n"
+        status += f"📂 <b>Tipo:</b> {content_type}\n"
+        status += f"🔢 <b>Archivos recibidos:</b> {files_count}\n\n"
+        
+        if files_count > 0:
+            status += "⏳ <b>Esperando:</b> Más archivos o /load para finalizar este contenido\n\n"
+        else:
+            status += "⏳ <b>Esperando:</b> Primer archivo del contenido\n\n"
     
     status += "</blockquote>"
     
