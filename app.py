@@ -3668,15 +3668,14 @@ async def send_keepalive_message(context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Error sending keepalive message: {e}")
 
-# Mantener el servidor Flask activo
 def main() -> None:
     """Start the bot."""
     # Create the Application
     persistence = PicklePersistence(filepath="multimedia_tv_bot_data.pickle")
-    
+
     # Create the Application with persistence
-    application = Application.builder().token(TOKEN).persistence(persistence).build()
-    
+    application = ApplicationBuilder().token(TOKEN).persistence(persistence).build()
+
     application.bot_data['verification_cache'] = {}
 
     # Register error handler
@@ -3699,63 +3698,63 @@ def main() -> None:
     application.add_handler(CommandHandler("stats", stats))
     application.add_handler(CommandHandler("broadcast", broadcast))
 
-# Add message handler for direct text searches
-application.add_handler(MessageHandler(
-    filters.TEXT & ~filters.COMMAND, 
-    handle_search
-))
+    # Add message handler for direct text searches
+    application.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND, 
+        handle_search
+    ))
 
-# Add periodic keepalive message (every 10 minutes = 600 seconds)
-application.job_queue.run_repeating(
-    send_keepalive_message,
-    interval=600,
-    first=10  # Wait 10 seconds before first message
-)
+    # Add periodic keepalive message (every 10 minutes = 600 seconds)
+    application.job_queue.run_repeating(
+        send_keepalive_message,
+        interval=600,
+        first=10  # Wait 10 seconds before first message
+    )
 
-# Add callback query handler
-application.add_handler(CallbackQueryHandler(handle_callback_query))
+    # Add callback query handler
+    application.add_handler(CallbackQueryHandler(handle_callback_query))
 
-application.add_handler(MessageHandler(
-    filters.TEXT & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
-    handle_content_name,
-), group=0)  # Alta prioridad
+    application.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
+        handle_content_name,
+    ), group=0)  # Alta prioridad
 
-application.add_handler(MessageHandler(
-    (filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
-    handle_load_content,
-), group=0)  # Alta prioridad
+    application.add_handler(MessageHandler(
+        (filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
+        handle_load_content,
+    ), group=0)  # Alta prioridad
 
-application.add_handler(MessageHandler(
-    (filters.PHOTO | filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND,
-    handle_upser_input,
-    # Este manejador debe ejecutarse después de otros manejadores más específicos
-), group=1)
+    application.add_handler(MessageHandler(
+        (filters.PHOTO | filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND,
+        handle_upser_input,
+        # Este manejador debe ejecutarse después de otros manejadores más específicos
+    ), group=1)
 
-# Schedule periodic tasks - Solución alternativa
-# En lugar de run_daily, usamos run_repeating con un intervalo de 24h
-application.job_queue.run_repeating(
-    check_plan_expiry,
-    interval=24*60*60,  # 24 horas en segundos
-    first=60            # Esperar 60 segundos antes de la primera ejecución
-)
+    # Schedule periodic tasks - Solución alternativa
+    # En lugar de run_daily, usamos run_repeating con un intervalo de 24h
+    application.job_queue.run_repeating(
+        check_plan_expiry,
+        interval=24*60*60,  # 24 horas en segundos
+        first=60            # Esperar 60 segundos antes de la primera ejecución
+    )
 
-application.job_queue.run_repeating(
-    check_channel_memberships,
-    interval=6*60*60,  # 6 horas en segundos
-    first=600  # Primera ejecución después de 10 minutos
-)
+    application.job_queue.run_repeating(
+        check_channel_memberships,
+        interval=6*60*60,  # 6 horas en segundos
+        first=600  # Primera ejecución después de 10 minutos
+    )
 
-application.job_queue.run_repeating(
-    reset_daily_limits,
-    interval=24*60*60,  # 24 horas en segundos
-    first=120           # Esperar 120 segundos antes de la primera ejecución
-)
+    application.job_queue.run_repeating(
+        reset_daily_limits,
+        interval=24*60*60,  # 24 horas en segundos
+        first=120           # Esperar 120 segundos antes de la primera ejecución
+    )
 
-# Mantener el servidor Flask activo
-keep_alive()
+    # Mantener el servidor Flask activo
+    keep_alive()
 
-# Start the Bot
-application.run_polling()
+    # Start the Bot
+    application.run_polling()
 
 if __name__ == "__main__":
     main()
