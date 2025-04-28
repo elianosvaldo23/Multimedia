@@ -25,6 +25,8 @@ from urllib.parse import urlparse
 from telegram.ext import PicklePersistence
 import signal
 import sys
+from telegram.ext import ConversationHandler, HANDLER_STOP
+
 
 def handle_exit(signum, frame):
     """Maneja señales de terminación"""
@@ -833,6 +835,7 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
             parse_mode=ParseMode.HTML
         )
         # Mantener el estado de espera de nombre
+        return HANDLER_STOP
 
 async def handle_load_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manejar la recepción de archivos durante el modo de carga masiva"""
@@ -3702,8 +3705,8 @@ def main() -> None:
     # Add message handler for direct text searches
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND, 
-        handle_search
-    ))
+        handle_search,
+	), group=1)  # Menor prioridad
     
     # Add periodic keepalive message (every 10 minutes = 600 seconds)
     application.job_queue.run_repeating(
@@ -3718,12 +3721,12 @@ def main() -> None:
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
         handle_content_name,
-    ), group=0)  # Alta prioridad
+    ), group=-10)  # Alta prioridad
 
     application.add_handler(MessageHandler(
         (filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
         handle_load_content,
-    ), group=0)  # Alta prioridad
+    ), group=-10)  # Alta prioridad
     
     application.add_handler(MessageHandler(
         (filters.PHOTO | filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND,
