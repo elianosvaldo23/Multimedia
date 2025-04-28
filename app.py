@@ -59,16 +59,17 @@ SEARCH_CHANNEL_ID = -1002302159104
 # Add this at the top with other constants
 PLANS_INFO = PLANS
 
+# Constantes para el sistema de series
+UPSER_STATE_IDLE = 0        # No hay carga de serie en proceso
+UPSER_STATE_RECEIVING = 1   # Recibiendo capítulos
+UPSER_STATE_COVER = 2       # Esperando la portada con descripción
+
 # Constantes para el sistema de carga masiva
 LOAD_STATE_INACTIVE = 0     # No hay carga masiva en proceso
 LOAD_STATE_WAITING_NAME = 1 # Esperando nombre del contenido
 LOAD_STATE_WAITING_FILES = 2 # Esperando archivos después de recibir nombre
 LOAD_STATE_FINISHING = 3    # Finalizando el procesamiento de la serie/película actual
 
-# Constantes para el sistema de carga masiva
-LOAD_STATE_INACTIVE = 0     # No hay carga masiva en proceso
-LOAD_STATE_WAITING_NAME = 1 # Esperando nombre del contenido
-LOAD_STATE_WAITING_FILE = 2 # Esperando archivo después de recibir nombre
 
 # Enable logging
 logging.basicConfig(
@@ -3866,8 +3867,8 @@ def main() -> None:
     application.add_handler(CommandHandler("search", search_content))
     application.add_handler(CommandHandler("imdb", imdb_command))
     application.add_handler(CommandHandler("plan", set_user_plan))
-    application.add_handler(CommandHandler("upser", upser_command))
     application.add_handler(CommandHandler("load", load_command))
+    application.add_handler(CommandHandler("upser", upser_command))
     application.add_handler(CommandHandler("cancelupser", cancel_upser_command))
     application.add_handler(CommandHandler("addgift_code", add_gift_code))
     application.add_handler(CommandHandler("gift_code", redeem_gift_code))
