@@ -2411,7 +2411,7 @@ async def upser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                     f"🎬 <b>Director:</b> {imdb_info['directors']}\n"
                     f"👥 <b>Reparto:</b> {imdb_info['cast']}\n\n"
                     f"📝 <b>Sinopsis:</b>\n<blockquote expandable>{imdb_info['plot']}</blockquote>\n\n"
-                    f"🔗 <a href='{imdb_info['url']}'>Ver en IMDb</a>"
+                    f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
                 )
                 
                 # Si encontramos un póster, descargarlo
