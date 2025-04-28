@@ -25,8 +25,6 @@ from urllib.parse import urlparse
 from telegram.ext import PicklePersistence
 import signal
 import sys
-from telegram.ext import ConversationHandler, HANDLER_STOP
-
 
 def handle_exit(signum, frame):
     """Maneja señales de terminación"""
@@ -1729,11 +1727,18 @@ async def search_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             parse_mode=ParseMode.HTML
         )
 
+# Modificación para handle_search
 @check_channel_membership
 async def handle_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle direct message searches."""
     # Verificar que update.message no sea None
     if not update.message:
+        return
+    
+    # Verificar si estamos en modo de carga masiva para el administrador
+    load_state = context.bot_data.get('load_state', LOAD_STATE_INACTIVE)
+    if update.effective_user.id == ADMIN_ID and load_state != LOAD_STATE_INACTIVE:
+        # Si el admin está en modo de carga masiva, no procesar como búsqueda
         return
         
     user_id = update.effective_user.id
@@ -3702,12 +3707,6 @@ def main() -> None:
     application.add_handler(CommandHandler("stats", stats))
     application.add_handler(CommandHandler("broadcast", broadcast))
     
-    # Add message handler for direct text searches
-    application.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND, 
-        handle_search,
-	), group=1)  # Menor prioridad
-    
     # Add periodic keepalive message (every 10 minutes = 600 seconds)
     application.job_queue.run_repeating(
         send_keepalive_message,
@@ -3732,7 +3731,13 @@ def main() -> None:
         (filters.PHOTO | filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND,
         handle_upser_input,
         # Este manejador debe ejecutarse después de otros manejadores más específicos
-    ), group=1)
+    ), group=-5)
+    
+    # Add message handler for direct text searches
+    application.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND, 
+        handle_search
+	), group=1)  # Menor prioridad
     
     # Schedule periodic tasks - Solución alternativa
     # En lugar de run_daily, usamos run_repeating con un intervalo de 24h
