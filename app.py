@@ -3494,6 +3494,10 @@ async def handle_upser_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         original_caption = update.message.caption or ""
         file_name = update.message.document.file_name if update.message.document else None
         
+        # Por defecto, el caption será el original
+        caption = original_caption
+        episode_num = None
+        
         # Si es el primer capítulo, detectar el nombre de la serie
         series_pattern = context.user_data.get('upser_series_pattern')
         if not series_pattern:
@@ -3530,7 +3534,13 @@ async def handle_upser_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
                     "Por favor, asegúrate de que el primer capítulo tenga un formato como 'Nombre Serie 01x01'</blockquote>",
                     parse_mode=ParseMode.HTML
                 )
-                return
+                # Usar un patrón predeterminado
+                context.user_data['upser_series_pattern'] = {
+                    'base_name': 'Serie',
+                    'season_num': 1,
+                    'current_episode': 1
+                }
+                episode_num = 1
         else:
             # Ya tenemos el patrón, extraer temporada y episodio del mensaje actual
             caption_or_filename = original_caption or file_name or ""
@@ -3601,10 +3611,14 @@ async def handle_upser_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
             else:
                 caption = original_caption
         
+        # Asegurar que episode_num tenga un valor
+        if episode_num is None:
+            episode_num = len(context.user_data.get('upser_episodes', [])) + 1
+        
         # Guardar el capítulo con todos los datos
         episode_data = {
             'message_id': message_id,
-            'episode_number': episode_num if 'episode_num' in locals() else len(context.user_data.get('upser_episodes', [])) + 1,
+            'episode_number': episode_num,
             'chat_id': chat_id,
             'caption': caption,
             'file_name': file_name
@@ -3612,6 +3626,12 @@ async def handle_upser_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         
         # Añadir a la lista de episodios
         context.user_data.setdefault('upser_episodes', []).append(episode_data)
+        
+        # Confirmar la recepción del capítulo
+        await update.message.reply_text(
+            f"<blockquote>✅ Capítulo {episode_num} recibido y guardado.</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
 
 async def finalize_series_upload(update: Update, context: ContextTypes.DEFAULT_TYPE, status_message=None) -> None:
     """Finalizar el proceso de carga y subir la serie a los canales"""
