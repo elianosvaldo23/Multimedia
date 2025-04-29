@@ -1224,8 +1224,7 @@ async def process_load_queue(update, context):
                         f"🎭 <b>Género:</b> {imdb_info.get('genres', 'No disponible')}\n"
                         f"🎬 <b>Director:</b> {imdb_info.get('directors', 'No disponible')}\n"
                         f"👥 <b>Reparto:</b> {imdb_info.get('cast', 'No disponible')}\n\n"
-                        f"📝 <b>Sinopsis:</b>\n<blockquote>{imdb_info.get('plot', 'No disponible')}</blockquote>\n\n"
-                        f"<blockquote>🎬 <b>📌 Canal Principal 📌</b>\n</blockquote>"
+                        f"📝 <b>Sinopsis:</b>\n<blockquote expandable>{imdb_info.get('plot', 'No disponible')}</blockquote>\n\n"                      
                     f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
                     )
                     
@@ -2062,7 +2061,7 @@ async def send_search_results(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         await status_message.edit_text(
             f"✅ Encontré {len(results)} resultados para '<b>{query}</b>'.\n\n"
-    		f"<blockquote>Selecciona uno para verlo:</blockquote>",
+    		f"Selecciona uno para verlo:",
     		reply_markup=reply_markup,
     		parse_mode=ParseMode.HTML
 		)
@@ -2079,10 +2078,10 @@ async def send_search_results(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         await status_message.edit_text(
             f"No se encontraron resultados para '{query}'.\n\n"
-            f"<blockquote>Comprueba que escribes el nombre correctamente o utiliza variaciones del mismo. "
+            f"Comprueba que escribes el nombre correctamente o utiliza variaciones del mismo. "
             f"Prueba escribiendo el nombre en el idioma oficial o español o solamente pon una palabra clave.\n"
             f"¿Quieres hacer un pedido?\n"
-            f"Selecciona el tipo y haz clic en 'Hacer pedido'.</blockquote>",
+            f"Selecciona el tipo y haz clic en 'Hacer pedido'.",
             reply_markup=reply_markup
         )
 
@@ -3346,8 +3345,7 @@ async def upser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                     f"🎭 <b>Género:</b> {imdb_info['genres']}\n"
                     f"🎬 <b>Director:</b> {imdb_info['directors']}\n"
                     f"👥 <b>Reparto:</b> {imdb_info['cast']}\n\n"
-                    f"📝 <b>Sinopsis:</b>\n<blockquote>{imdb_info['plot']}</blockquote>\n\n"
-                    f"<blockquote>🎬 <b>📌 Canal Principal 📌</b>\n</blockquote>"
+                    f"📝 <b>Sinopsis:</b>\n<blockquote expandable>{imdb_info['plot']}</blockquote>\n\n"                    
                     f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
                 )
                 
@@ -3460,6 +3458,10 @@ async def cancel_upser_command(update: Update, context: ContextTypes.DEFAULT_TYP
 
 async def handle_upser_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manejar la recepción de capítulos y portada durante el proceso de carga de series"""
+    # Verificar que update y effective_user no sean None
+    if not update or not update.effective_user:
+        return
+        
     user = update.effective_user
     
     # Verificar que el usuario es administrador
@@ -3490,154 +3492,126 @@ async def handle_upser_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         message_id = update.message.message_id
         chat_id = update.effective_chat.id
         original_caption = update.message.caption or ""
-        file_name = update.message.document.file_name if update.message.document else "Sin nombre"
+        file_name = update.message.document.file_name if update.message.document else None
         
-        # Determinar el texto para buscar patrones
-        text_to_search = original_caption if original_caption else file_name
-        
-        # Si es el primer capítulo, detectar el patrón
-        if not context.user_data.get('upser_series_pattern'):
-            # Buscar un patrón con nombre + temporada + episodio
-            name_pattern = re.search(r'(.+?)\s+\d+[xX]\d+', text_to_search)
-            if not name_pattern:
-                name_pattern = re.search(r'(.+?)\s+[Ss]\d+[Ee]\d+', text_to_search)
+        # Si es el primer capítulo, detectar el nombre de la serie
+        series_pattern = context.user_data.get('upser_series_pattern')
+        if not series_pattern:
+            # Extraer el nombre base y patrón del primer capítulo
+            caption_or_filename = original_caption or file_name or ""
             
-            # Extraer el nombre base si se encontró
-            base_name = name_pattern.group(1).strip() if name_pattern else "Serie"
+            # Buscar patrón como "Nombre Serie 01x02"
+            pattern_match = re.search(r'(.+?)\s+(\d+)[xX](\d+)', caption_or_filename)
             
-            # Buscar patrón de temporada/episodio
-            num_pattern = re.search(r'(\d+)[xX](\d+)', text_to_search)
-            if not num_pattern:
-                num_pattern = re.search(r'[Ss](\d+)[Ee](\d+)', text_to_search)
-            
-            if num_pattern:
-                if 'x' in text_to_search.lower() or 'X' in text_to_search:
-                    season_num = int(num_pattern.group(1))
-                    episode_num = int(num_pattern.group(2))
-                    format_type = 'x'
-                else:
-                    season_num = int(num_pattern.group(1))
-                    episode_num = int(num_pattern.group(2))
-                    format_type = 'SE'
-            else:
-                # No se encontró patrón de numeración
-                season_num = 1
-                episode_num = 1
-                format_type = 'x'
-            
-            # Guardar el patrón detectado
-            context.user_data['upser_series_pattern'] = {
-                'base_name': base_name,
-                'season_num': season_num,
-                'current_episode': episode_num,
-                'format_type': format_type
-            }
-            
-            await update.message.reply_text(
-                f"<blockquote>✅ Serie detectada: <b>{base_name}</b>\n"
-                f"Temporada: {season_num}\n"
-                f"Episodio: {episode_num}\n"
-                f"Los siguientes capítulos usarán este nombre.</blockquote>",
-                parse_mode=ParseMode.HTML
-            )
-            
-            # Para el primer capítulo, no es necesario editar el caption
-            caption = original_caption
-        else:
-            # Ya tenemos un patrón, detectar números del capítulo actual
-            series_pattern = context.user_data['upser_series_pattern']
-            base_name = series_pattern['base_name']
-            season_num = series_pattern['season_num']
-            
-            # Buscar si este capítulo tiene números de temporada/episodio
-            num_pattern = re.search(r'(\d+)[xX](\d+)', text_to_search)
-            if not num_pattern:
-                num_pattern = re.search(r'[Ss](\d+)[Ee](\d+)', text_to_search)
-            
-            if num_pattern:
-                # Extraer números de este capítulo
-                if 'x' in text_to_search.lower() or 'X' in text_to_search:
-                    current_season = int(num_pattern.group(1))
-                    episode_num = int(num_pattern.group(2))
-                else:
-                    current_season = int(num_pattern.group(1))
-                    episode_num = int(num_pattern.group(2))
+            if pattern_match:
+                base_name = pattern_match.group(1).strip()
+                season_num = int(pattern_match.group(2))
+                episode_num = int(pattern_match.group(3))
                 
-                # Actualizar temporada si cambió
-                if current_season != season_num:
-                    season_num = current_season
-                    series_pattern['season_num'] = season_num
+                # Guardar el patrón
+                context.user_data['upser_series_pattern'] = {
+                    'base_name': base_name,
+                    'season_num': season_num,
+                    'current_episode': episode_num
+                }
+                
+                # Informar al administrador
+                await update.message.reply_text(
+                    f"<blockquote>✅ Detectado nombre de serie: <b>{base_name}</b>\n"
+                    f"Temporada: {season_num}\n"
+                    f"Primer episodio: {episode_num}\n"
+                    f"Todos los capítulos usarán este nombre.</blockquote>",
+                    parse_mode=ParseMode.HTML
+                )
             else:
-                # No tiene números, usar el siguiente
+                # No se detectó un patrón claro en el primer capítulo
+                await update.message.reply_text(
+                    "<blockquote>⚠️ No se pudo detectar un patrón claro en el primer capítulo.\n"
+                    "Por favor, asegúrate de que el primer capítulo tenga un formato como 'Nombre Serie 01x01'</blockquote>",
+                    parse_mode=ParseMode.HTML
+                )
+                return
+        else:
+            # Ya tenemos el patrón, extraer temporada y episodio del mensaje actual
+            caption_or_filename = original_caption or file_name or ""
+            num_pattern = re.search(r'(\d+)[xX](\d+)', caption_or_filename)
+            
+            if num_pattern:
+                # Hay números en el formato 01x02
+                current_season = int(num_pattern.group(1))
+                episode_num = int(num_pattern.group(2))
+            else:
+                # No hay números claros, incrementar el último episodio
+                current_season = series_pattern['season_num']
                 episode_num = series_pattern['current_episode'] + 1
+                series_pattern['current_episode'] = episode_num
             
-            # Actualizar episodio actual
-            series_pattern['current_episode'] = episode_num
+            # Usar el nombre base guardado para crear un nuevo caption
+            base_name = series_pattern['base_name']
+            new_caption = f"{base_name} {current_season:02d}x{episode_num:02d}"
             
-            # Crear un nuevo caption con el formato correcto
-            if series_pattern['format_type'] == 'x':
-                new_caption = f"{base_name} {season_num:02d}x{episode_num:02d}"
-            else:
-                new_caption = f"{base_name} S{season_num:02d}E{episode_num:02d}"
-            
-            # Verificar si necesitamos actualizar el caption
-            need_update = False
-            if not original_caption:
-                # Caption vacío
-                need_update = True
-            elif base_name.lower() not in original_caption.lower():
-                # Caption no incluye el nombre base
-                need_update = True
-            
-            if need_update:
-                # Aquí está el cambio fundamental: reutilizamos el mensaje en lugar de editarlo
-                # Primero eliminamos el mensaje original
+            # Verificar si el caption necesita ser actualizado
+            if base_name not in original_caption:
+                # No tiene el nombre de la serie, reemplazar el mensaje
                 try:
-                    await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
-                    
-                    # Luego reenviamos el archivo con el nuevo caption
+                    # Obtener el file_id del archivo actual
                     if update.message.video:
-                        # Reenviar video
-                        video_file_id = update.message.video.file_id
+                        file_id = update.message.video.file_id
+                        # Borrar el mensaje original
+                        await context.bot.delete_message(
+                            chat_id=chat_id, 
+                            message_id=message_id
+                        )
+                        # Enviar un nuevo mensaje con el caption correcto
                         new_message = await context.bot.send_video(
                             chat_id=chat_id,
-                            video=video_file_id,
+                            video=file_id,
                             caption=new_caption
                         )
+                        # Actualizar el message_id para guardarlo correctamente
+                        message_id = new_message.message_id
                     elif update.message.document:
-                        # Reenviar documento
-                        doc_file_id = update.message.document.file_id
+                        file_id = update.message.document.file_id
+                        # Borrar el mensaje original
+                        await context.bot.delete_message(
+                            chat_id=chat_id, 
+                            message_id=message_id
+                        )
+                        # Enviar un nuevo mensaje con el caption correcto
                         new_message = await context.bot.send_document(
                             chat_id=chat_id,
-                            document=doc_file_id,
+                            document=file_id,
                             caption=new_caption
                         )
+                        # Actualizar el message_id para guardarlo correctamente
+                        message_id = new_message.message_id
                     
-                    # Actualizar message_id para usar el nuevo mensaje
-                    message_id = new_message.message_id
-                    caption = new_caption
-                    
-                    await update.message.reply_text(
-                        f"<blockquote>✅ Caption actualizado a: <b>{new_caption}</b></blockquote>",
+                    # Notificar el cambio de nombre
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=f"<blockquote>✅ Nombre actualizado: <b>{new_caption}</b></blockquote>",
                         parse_mode=ParseMode.HTML
                     )
+                    
+                    # Usar el nuevo caption
+                    caption = new_caption
                 except Exception as e:
-                    logger.error(f"Error al reenviar mensaje con nuevo caption: {e}")
+                    logger.error(f"Error al reenviar con nuevo caption: {e}")
                     caption = original_caption
             else:
                 caption = original_caption
         
-        # Guardar el capítulo
+        # Guardar el capítulo con todos los datos
         episode_data = {
             'message_id': message_id,
-            'episode_number': episode_num if 'episode_num' in locals() else 1,
+            'episode_number': episode_num if 'episode_num' in locals() else len(context.user_data.get('upser_episodes', [])) + 1,
             'chat_id': chat_id,
             'caption': caption,
             'file_name': file_name
         }
         
+        # Añadir a la lista de episodios
         context.user_data.setdefault('upser_episodes', []).append(episode_data)
-
 
 async def finalize_series_upload(update: Update, context: ContextTypes.DEFAULT_TYPE, status_message=None) -> None:
     """Finalizar el proceso de carga y subir la serie a los canales"""
