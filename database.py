@@ -497,6 +497,24 @@ class Database:
             logger.error(f"Error al añadir serie: {e}")
             return False
     
+    def find_series_by_cover_message_id(self, cover_message_id):
+        """Buscar una serie por su ID de mensaje de portada"""
+        try:
+            series = self.series.find_one({"cover_message_id": cover_message_id})
+            return series
+        except Exception as e:
+            logger.error(f"Error buscando serie por ID de mensaje de portada: {e}")
+            return None
+
+    def find_episode_by_message_id(self, message_id):
+        """Buscar un episodio por su ID de mensaje"""
+        try:
+            episode = self.episodes.find_one({"message_id": message_id})
+            return episode
+        except Exception as e:
+            logger.error(f"Error buscando episodio por ID de mensaje: {e}")
+            return None
+    
     def add_episode(self, series_id, episode_number, message_id):
         """Añadir un episodio a una serie"""
         try:
