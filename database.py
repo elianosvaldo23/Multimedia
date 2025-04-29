@@ -474,77 +474,95 @@ class Database:
             logger.error(f"Error al obtener todos los IDs de usuarios: {e}")
             return []
     
-    def add_series(self, series_id, title, description, cover_message_id, added_by):
-        """Añadir una nueva serie a la base de datos"""
-        try:
-            series = {
-                "series_id": series_id,
-                "title": title,
-                "description": description,
-                "cover_message_id": cover_message_id,
-                "added_by": added_by,
-                "created_at": datetime.now()
-            }
+def add_series(self, series_id, title, description, cover_message_id, added_by):
+    """Añadir una nueva serie a la base de datos"""
+    try:
+        series = {
+            "series_id": series_id,
+            "title": title,
+            "description": description,
+            "cover_message_id": cover_message_id,
+            "added_by": added_by,
+            "created_at": datetime.now()
+        }
+        
+        self.series.update_one(
+            {"series_id": series_id},
+            {"$set": series},
+            upsert=True
+        )
+        
+        return True
+    except Exception as e:
+        logger.error(f"Error al añadir serie: {e}")
+        return False
             
-            self.series.update_one(
-                {"series_id": series_id},
-                {"$set": series},
-                upsert=True
-            )
-            
-            return True
-        except Exception as e:
-            logger.error(f"Error al añadir serie: {e}")
-            return False
-    
-    def add_episode(self, series_id, episode_number, message_id):
-        """Añadir un episodio a una serie"""
-        try:
-            episode = {
-                "series_id": series_id,
-                "episode_number": episode_number,
-                "message_id": message_id,
-                "added_at": datetime.now()
-            }
-            
-            self.episodes.update_one(
-                {
-                    "series_id": series_id,
-                    "episode_number": episode_number
-                },
-                {"$set": episode},
-                upsert=True
-            )
-            
-            return True
-        except Exception as e:
-            logger.error(f"Error al añadir episodio: {e}")
-            return False
-    
-    def get_series(self, series_id):
-        """Obtener información de una serie por ID"""
-        try:
-            return self.series.find_one({"series_id": series_id})
-        except Exception as e:
-            logger.error(f"Error al obtener serie: {e}")
-            return None
-    
-    def get_episode(self, series_id, episode_number):
-        """Obtener un episodio específico de una serie"""
-        try:
-            return self.episodes.find_one({
+def find_series_by_cover_message_id(self, cover_message_id):
+    """Buscar una serie por su ID de mensaje de portada"""
+    try:
+        series = self.series.find_one({"cover_message_id": cover_message_id})
+        return series
+    except Exception as e:
+        logger.error(f"Error buscando serie por ID de mensaje de portada: {e}")
+        return None
+
+def find_episode_by_message_id(self, message_id):
+    """Buscar un episodio por su ID de mensaje"""
+    try:
+        episode = self.episodes.find_one({"message_id": message_id})
+        return episode
+    except Exception as e:
+        logger.error(f"Error buscando episodio por ID de mensaje: {e}")
+        return None            
+
+def add_episode(self, series_id, episode_number, message_id):
+    """Añadir un episodio a una serie"""
+    try:
+        episode = {
+            "series_id": series_id,
+            "episode_number": episode_number,
+            "message_id": message_id,
+            "added_at": datetime.now()
+        }
+        
+        self.episodes.update_one(
+            {
                 "series_id": series_id,
                 "episode_number": episode_number
-            })
-        except Exception as e:
-            logger.error(f"Error al obtener episodio: {e}")
-            return None
+            },
+            {"$set": episode},
+            upsert=True
+        )
+        
+        return True
+    except Exception as e:
+        logger.error(f"Error al añadir episodio: {e}")
+        return False
     
-    def get_series_episodes(self, series_id):
-        """Obtener todos los episodios de una serie"""
-        try:
-            episodes = self.episodes.find({"series_id": series_id}).sort("episode_number", 1)
-            return list(episodes)
-        except Exception as e:
-            logger.error(f"Error al obtener episodios de serie: {e}")
-            return []
+def get_series(self, series_id):
+    """Obtener información de una serie por ID"""
+    try:
+        return self.series.find_one({"series_id": series_id})
+    except Exception as e:
+        logger.error(f"Error al obtener serie: {e}")
+        return None
+    
+def get_episode(self, series_id, episode_number):
+    """Obtener un episodio específico de una serie"""
+    try:
+        return self.episodes.find_one({
+            "series_id": series_id,
+            "episode_number": episode_number
+        })
+    except Exception as e:
+        logger.error(f"Error al obtener episodio: {e}")
+        return None
+    
+def get_series_episodes(self, series_id):
+    """Obtener todos los episodios de una serie"""
+    try:
+        episodes = self.episodes.find({"series_id": series_id}).sort("episode_number", 1)
+        return list(episodes)
+    except Exception as e:
+        logger.error(f"Error al obtener episodios de serie: {e}")
+        return []
