@@ -68,7 +68,6 @@ UPSER_STATE_COVER = 2       # Esperando la portada con descripción
 LOAD_STATE_INACTIVE = 0     # No hay carga masiva en proceso
 LOAD_STATE_WAITING_NAME = 1 # Esperando nombre del contenido
 LOAD_STATE_WAITING_FILES = 2 # Esperando archivos después de recibir nombre
-LOAD_STATE_FINISHING = 3    # Finalizando el procesamiento de la serie/película actual
 
 
 # Enable logging
@@ -624,23 +623,10 @@ async def load_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     # Obtener el estado actual de carga
     load_state = context.bot_data.get('load_state', LOAD_STATE_INACTIVE)
     
-    # Si estamos esperando finalizar una serie/película
-    if load_state == LOAD_STATE_WAITING_FILES:
-        # Finalizar la carga actual y procesarla
-        await finalize_current_content(update, context)
-        # Volver al estado de esperar nombre para el siguiente contenido
-        context.bot_data['load_state'] = LOAD_STATE_WAITING_NAME
-        await update.message.reply_text(
-            "<blockquote>✅ Contenido actual finalizado. Ahora puedes enviar el nombre del próximo contenido.</blockquote>",
-            parse_mode=ParseMode.HTML
-        )
-        return
-    
     # Si estamos inactivos, iniciar el proceso
     if load_state == LOAD_STATE_INACTIVE:
         # Inicializar estructura de datos para carga masiva
         context.bot_data['load_state'] = LOAD_STATE_WAITING_NAME
-        context.bot_data['load_queue'] = []  # Cola de contenido pendiente
         context.bot_data['current_content'] = {
             'name': None,
             'imdb_info': None,
@@ -655,9 +641,9 @@ async def load_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             "1️⃣ Envía primero el nombre exacto del contenido\n"
             "2️⃣ El bot buscará información en IMDb\n"
             "3️⃣ Luego envía todos los archivos de la película o capítulos de la serie\n"
-            "4️⃣ Envía /load nuevamente para finalizar este contenido y pasar al siguiente\n"
-            "5️⃣ Repite el proceso para cada contenido\n"
-            "6️⃣ Para finalizar el modo de carga masiva, envía /load cuando no hay contenido pendiente\n\n"
+            "4️⃣ Cuando termines con este contenido, simplemente envía el nombre del siguiente contenido\n"
+            "5️⃣ El bot detectará automáticamente el nuevo nombre y procesará el contenido anterior\n"
+            "6️⃣ Para finalizar el modo de carga masiva, envía /load nuevamente\n\n"
             "✅ El bot procesará todo con efectos visuales como el comando /upser</blockquote>",
             parse_mode=ParseMode.HTML
         )
@@ -670,21 +656,15 @@ async def load_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         
         # Guardar referencia al mensaje de estado
         context.bot_data['load_status_message'] = status_msg
-        return
     
-    # Si ya estamos en proceso de carga y no hay contenido activo, finalizar modo carga
-    if load_state == LOAD_STATE_WAITING_NAME:
-        # Verificar si hay elementos pendientes
+    # Si ya estamos en proceso, finalizar modo carga
+    else:
+        # Verificar si hay contenido pendiente por procesar
         current_content = context.bot_data.get('current_content', {})
         if current_content.get('files'):
-            # Aún hay archivos sin procesar
-            await update.message.reply_text(
-                "<blockquote>⚠️ Hay contenido pendiente por procesar.\n"
-                "Envía /load después de enviar el nombre de un contenido para finalizar ese contenido específico.</blockquote>",
-                parse_mode=ParseMode.HTML
-            )
-            return
-            
+            # Procesar el contenido pendiente antes de finalizar
+            await finalize_current_content(update, context)
+        
         # Finalizar el modo de carga
         context.bot_data['load_state'] = LOAD_STATE_INACTIVE
         
@@ -717,14 +697,28 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
     if user.id != ADMIN_ID:
         return
     
-    # Verificar si estamos en modo de carga masiva esperando nombre
+    # Verificar si estamos en modo de carga masiva
     load_state = context.bot_data.get('load_state', LOAD_STATE_INACTIVE)
-    if load_state != LOAD_STATE_WAITING_NAME:
-        return  # No estamos esperando nombre
+    if load_state == LOAD_STATE_INACTIVE:
+        return  # No estamos en modo carga masiva
     
     # Obtener el nombre enviado por el administrador
     content_name = update.message.text.strip()
     
+    # Verificar si ya hay contenido pendiente (automáticamente finalizar lo anterior)
+    current_content = context.bot_data.get('current_content', {})
+    if load_state == LOAD_STATE_WAITING_FILES and current_content.get('files'):
+        # Hay un contenido pendiente con archivos, procesarlo primero
+        await update.message.reply_text(
+            f"<blockquote>⚙️ Detectado nuevo nombre: <b>{content_name}</b>\n"
+            f"Primero procesaré el contenido anterior: <b>{current_content.get('title', 'Contenido sin título')}</b></blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        
+        # Procesar el contenido pendiente
+        await finalize_current_content(update, context)
+    
+    # Ahora procesamos el nuevo nombre
     # Crear un mensaje de estado para este proceso específico
     status_msg = await update.message.reply_text(
         f"<blockquote>🔍 Buscando información para: <b>{content_name}</b>...</blockquote>",
@@ -782,7 +776,7 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
                         f"🎭 <b>Género:</b> {imdb_info['genres']}\n\n"
                         f"<blockquote>Ahora envía todos los archivos del contenido.\n"
                         f"Si es una serie, envía todos los capítulos en orden.\n"
-                        f"Cuando termines, envía /load nuevamente para procesar este contenido.</blockquote>"
+                        f"Cuando termines, envía el nombre del siguiente contenido.</blockquote>"
                     )
                     
                     await context.bot.send_photo(
@@ -800,16 +794,14 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
                     await status_msg.edit_text(
                         f"<blockquote>✅ Información encontrada: <b>{imdb_info['title']} ({imdb_info['year']})</b>\n"
                         f"⚠️ No se pudo descargar póster para vista previa\n"
-                        f"Ahora envía los archivos del contenido.\n"
-                        f"Cuando termines, envía /load nuevamente.</blockquote>",
+                        f"Ahora envía los archivos del contenido.</blockquote>",
                         parse_mode=ParseMode.HTML
                     )
             else:
                 await status_msg.edit_text(
                     f"<blockquote>✅ Información encontrada: <b>{imdb_info['title']} ({imdb_info['year']})</b>\n"
                     f"⚠️ No se encontró póster para este contenido\n"
-                    f"Ahora envía los archivos del contenido.\n"
-                    f"Cuando termines, envía /load nuevamente.</blockquote>",
+                    f"Ahora envía los archivos del contenido.</blockquote>",
                     parse_mode=ParseMode.HTML
                 )
         
@@ -916,14 +908,14 @@ async def handle_load_content(update: Update, context: ContextTypes.DEFAULT_TYPE
             await update.message.reply_text(
                 f"<blockquote>📥 Capítulo {episode_num} recibido para: <b>{current_content['title']}</b>\n"
                 f"Total de capítulos: {len(current_content['files'])}\n\n"
-                f"Envía más capítulos o /load para finalizar esta serie.</blockquote>",
+                f"Envía más capítulos o el nombre de otro contenido para continuar.</blockquote>",
                 parse_mode=ParseMode.HTML
             )
         else:
             await update.message.reply_text(
                 f"<blockquote>📥 Archivo recibido para: <b>{current_content['title']}</b>\n"
                 f"Total de archivos: {len(current_content['files'])}\n\n"
-                f"Envía más partes o /load para finalizar esta película.</blockquote>",
+                f"Envía más partes o el nombre de otro contenido para continuar.</blockquote>",
                 parse_mode=ParseMode.HTML
             )
         
@@ -962,6 +954,8 @@ async def finalize_current_content(update, context):
                 f"🎬 <b>Director:</b> {imdb_info.get('directors', 'No disponible')}\n"
                 f"👥 <b>Reparto:</b> {imdb_info.get('cast', 'No disponible')}\n\n"
                 f"📝 <b>Sinopsis:</b>\n<blockquote>{imdb_info.get('plot', 'No disponible')}</blockquote>\n\n"
+                f"<blockquote>🎬 <b>📌 Canal Principal 📌</b>\n</blockquote>"
+				f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
             )
             
             if imdb_info.get('url'):
@@ -1231,6 +1225,8 @@ async def process_load_queue(update, context):
                         f"🎬 <b>Director:</b> {imdb_info.get('directors', 'No disponible')}\n"
                         f"👥 <b>Reparto:</b> {imdb_info.get('cast', 'No disponible')}\n\n"
                         f"📝 <b>Sinopsis:</b>\n<blockquote>{imdb_info.get('plot', 'No disponible')}</blockquote>\n\n"
+                        f"<blockquote>🎬 <b>📌 Canal Principal 📌</b>\n</blockquote>"
+                    f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
                     )
                     
                     if imdb_info.get('url'):
