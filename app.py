@@ -2100,36 +2100,96 @@ async def handle_send_callback(query, context, msg_id):
         )
         
         try:
-            # Usar siempre copy_message pero con diferentes permisos de protección
-            await context.bot.copy_message(
-                chat_id=query.message.chat_id,
-                from_chat_id=SEARCH_CHANNEL_ID,
-                message_id=msg_id,
-                protect_content=not can_forward  # False para Plus/Ultra, True para Básico/Pro
-            )
+            # Primero, verificar si este mensaje pertenece a una serie
+            series_info = db.find_series_by_cover_message_id(msg_id)
+            if series_info:
+                # Es un mensaje de portada de serie
+                series_id = series_info['series_id']
+                view_url = f"https://t.me/MultimediaTVbot?start=series_{series_id}"
+                
+                # Copiar mensaje con botón "Ver ahora"
+                message = await context.bot.copy_message(
+                    chat_id=query.message.chat_id,
+                    from_chat_id=SEARCH_CHANNEL_ID,
+                    message_id=msg_id,
+                    protect_content=not can_forward
+                )
+                
+                # Agregar el botón "Ver ahora"
+                keyboard = [
+                    [InlineKeyboardButton("Ver ahora", url=view_url)]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                try:
+                    # Editar el mensaje enviado para añadir el botón
+                    await context.bot.edit_message_reply_markup(
+                        chat_id=query.message.chat_id,
+                        message_id=message.message_id,
+                        reply_markup=reply_markup
+                    )
+                except Exception as e:
+                    logger.error(f"Error añadiendo botón 'Ver ahora': {e}")
+            else:
+                # Verificar si es un episodio de serie
+                episode_info = db.find_episode_by_message_id(msg_id)
+                
+                if episode_info:
+                    # Es un episodio, obtener la serie
+                    series_id = episode_info['series_id']
+                    view_url = f"https://t.me/MultimediaTVbot?start=series_{series_id}"
+                    
+                    # Enviar el episodio
+                    await context.bot.copy_message(
+                        chat_id=query.message.chat_id,
+                        from_chat_id=SEARCH_CHANNEL_ID,
+                        message_id=msg_id,
+                        protect_content=not can_forward
+                    )
+                    
+                    # Enviar mensaje adicional con el botón para ver toda la serie
+                    keyboard = [
+                        [InlineKeyboardButton("Ver serie completa", url=view_url)]
+                    ]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    
+                    await context.bot.send_message(
+                        chat_id=query.message.chat_id,
+                        text="<blockquote>✅ Para ver todos los episodios de esta serie, usa el botón:</blockquote>",
+                        reply_markup=reply_markup,
+                        parse_mode=ParseMode.HTML
+                    )
+                else:
+                    # Es contenido normal (película u otro)
+                    view_url = f"https://t.me/MultimediaTVbot?start=content_{msg_id}"
+                    
+                    # Copiar mensaje
+                    message = await context.bot.copy_message(
+                        chat_id=query.message.chat_id,
+                        from_chat_id=SEARCH_CHANNEL_ID,
+                        message_id=msg_id,
+                        protect_content=not can_forward
+                    )
+                    
+                    # Para usuarios que pueden reenviar contenido, ofrecer botón de compartir
+                    if can_forward:
+                        keyboard = [
+                            [InlineKeyboardButton("Compartir 🔗", url=f"https://t.me/share/url?url={view_url}&text=¡Mira%20este%20contenido%20conmigo!")]
+                        ]
+                        share_markup = InlineKeyboardMarkup(keyboard)
+                        
+                        await context.bot.send_message(
+                            chat_id=query.message.chat_id,
+                            text="<blockquote>¿Te gustó el contenido? ¡Compártelo con tus amigos!</blockquote>",
+                            reply_markup=share_markup,
+                            parse_mode=ParseMode.HTML
+                        )
             
             # Answer the callback query
             await query.answer("Contenido enviado")
             
-            # Add share button for easy sharing (only for users who can forward)
-            if can_forward:
-                share_url = f"https://t.me/MultimediaTVbot?start=content_{msg_id}"
-                keyboard = [
-                    [InlineKeyboardButton("Compartir 🔗", url=f"https://t.me/share/url?url={share_url}&text=¡Mira%20este%20contenido%20conmigo!")]
-                ]
-                share_markup = InlineKeyboardMarkup(keyboard)
-                
-                await context.bot.send_message(
-                    chat_id=query.message.chat_id,
-                    text="¿Te gustó el contenido? ¡Compártelo con tus amigos!",
-                    parse_mode=ParseMode.HTML
-                )
-            
             # Update the original message to show which content was selected
-            # Get the current keyboard
             keyboard = query.message.reply_markup.inline_keyboard
-            
-            # Find the button that was clicked and mark it as selected
             new_keyboard = []
             for row in keyboard:
                 new_row = []
@@ -2152,14 +2212,13 @@ async def handle_send_callback(query, context, msg_id):
             logger.error(f"Error sending content: {e}")
             await context.bot.send_message(
                 chat_id=query.message.chat_id,
-                text=f"❌ Error al enviar el contenido: {str(e)[:100]}\n\nEs posible que el canal de búsqueda no esté accesible o que el mensaje ya no exista.",
+                text=f"<blockquote>❌ Error al enviar el contenido: {str(e)[:100]}\n\nEs posible que el canal de búsqueda no esté accesible o que el mensaje ya no exista.</blockquote>",
                 parse_mode=ParseMode.HTML
             )
     
     except Exception as e:
         logger.error(f"Error handling send callback: {e}")
         await query.answer(f"Error: {str(e)[:200]}")
-
 
 async def handle_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle profile button click with real-time limit information"""
@@ -3436,165 +3495,149 @@ async def handle_upser_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         # Determinar el texto para buscar patrones
         text_to_search = original_caption if original_caption else file_name
         
-        # Verificar si es el primer capítulo o ya tenemos un patrón
-        series_pattern = context.user_data.get('upser_series_pattern')
-        
-        if not series_pattern:
-            # Es el primer capítulo, intentar detectar el patrón completo
-            pattern_match = re.search(r'(.+?)(?:\s+|_)(\d+)[xX](\d+)', text_to_search)
-            if not pattern_match:
-                pattern_match = re.search(r'(.+?)(?:\s+|_)[Ss](\d+)[Ee](\d+)', text_to_search)
+        # Si es el primer capítulo, detectar el patrón
+        if not context.user_data.get('upser_series_pattern'):
+            # Buscar un patrón con nombre + temporada + episodio
+            name_pattern = re.search(r'(.+?)\s+\d+[xX]\d+', text_to_search)
+            if not name_pattern:
+                name_pattern = re.search(r'(.+?)\s+[Ss]\d+[Ee]\d+', text_to_search)
             
-            if pattern_match:
-                # Se encontró un patrón con nombre completo (ej: "avatar 01x01")
-                base_name = pattern_match.group(1).strip()
-                season_num = int(pattern_match.group(2))
-                episode_num = int(pattern_match.group(3))
-                format_type = 'x' if 'x' in text_to_search.lower() else 'SE'
-                
-                # Guardar el patrón detectado
-                context.user_data['upser_series_pattern'] = {
-                    'base_name': base_name,
-                    'season_num': season_num,
-                    'current_episode': episode_num,
-                    'format_type': format_type
-                }
-                
-                # Confirmar el patrón detectado
-                await update.message.reply_text(
-                    f"<blockquote>✅ Patrón de serie detectado: <b>{base_name}</b>\n"
-                    f"Temporada: {season_num}\n"
-                    f"Episodio: {episode_num}\n"
-                    f"Los siguientes capítulos usarán este mismo nombre.</blockquote>",
-                    parse_mode=ParseMode.HTML
-                )
-            else:
-                # No se encontró un patrón completo, buscar solo número de temporada y episodio
-                num_pattern = re.search(r'(\d+)[xX](\d+)', text_to_search)
-                if not num_pattern:
-                    num_pattern = re.search(r'[Ss](\d+)[Ee](\d+)', text_to_search)
-                
-                if num_pattern:
-                    # Se encontraron números (ej: "01x01") pero sin nombre
-                    if 'x' in text_to_search.lower():
-                        season_num = int(num_pattern.group(1))
-                        episode_num = int(num_pattern.group(2))
-                        format_type = 'x'
-                    else:
-                        season_num = int(num_pattern.group(1))
-                        episode_num = int(num_pattern.group(2))
-                        format_type = 'SE'
-                    
-                    # Usar un nombre genérico
-                    base_name = "Serie"
-                    
-                    # Guardar el patrón
-                    context.user_data['upser_series_pattern'] = {
-                        'base_name': base_name,
-                        'season_num': season_num,
-                        'current_episode': episode_num,
-                        'format_type': format_type
-                    }
-                    
-                    await update.message.reply_text(
-                        f"<blockquote>⚠️ No se detectó nombre para la serie.\n"
-                        f"Usando: <b>{base_name}</b>\n"
-                        f"Temporada: {season_num}\n"
-                        f"Episodio: {episode_num}\n"
-                        f"Por favor especifica un nombre en el siguiente capítulo.</blockquote>",
-                        parse_mode=ParseMode.HTML
-                    )
-                else:
-                    # No se encontró ningún patrón, crear uno genérico
-                    num_episodes = len(context.user_data.get('upser_episodes', []))
-                    base_name = "Serie"
-                    season_num = 1
-                    episode_num = num_episodes + 1
-                    format_type = 'x'
-                    
-                    # Guardar el patrón
-                    context.user_data['upser_series_pattern'] = {
-                        'base_name': base_name,
-                        'season_num': season_num,
-                        'current_episode': episode_num,
-                        'format_type': format_type
-                    }
-                    
-                    await update.message.reply_text(
-                        f"<blockquote>⚠️ No se detectó patrón de serie.\n"
-                        f"Usando valores predeterminados:\n"
-                        f"Nombre: <b>{base_name}</b>\n"
-                        f"Temporada: {season_num}\n"
-                        f"Episodio: {episode_num}\n"
-                        f"Por favor especifica un nombre para el siguiente capítulo.</blockquote>",
-                        parse_mode=ParseMode.HTML
-                    )
-        else:
-            # Ya tenemos un patrón guardado, aplicarlo al nuevo capítulo
-            base_name = series_pattern['base_name']
-            season_num = series_pattern['season_num']
+            # Extraer el nombre base si se encontró
+            base_name = name_pattern.group(1).strip() if name_pattern else "Serie"
             
-            # Buscar si este capítulo tiene su propio patrón de temporada/episodio
+            # Buscar patrón de temporada/episodio
             num_pattern = re.search(r'(\d+)[xX](\d+)', text_to_search)
             if not num_pattern:
                 num_pattern = re.search(r'[Ss](\d+)[Ee](\d+)', text_to_search)
             
             if num_pattern:
-                # El capítulo tiene su propia numeración (ej: "01x02" o "S01E02")
-                if 'x' in text_to_search.lower():
+                if 'x' in text_to_search.lower() or 'X' in text_to_search:
+                    season_num = int(num_pattern.group(1))
+                    episode_num = int(num_pattern.group(2))
+                    format_type = 'x'
+                else:
+                    season_num = int(num_pattern.group(1))
+                    episode_num = int(num_pattern.group(2))
+                    format_type = 'SE'
+            else:
+                # No se encontró patrón de numeración
+                season_num = 1
+                episode_num = 1
+                format_type = 'x'
+            
+            # Guardar el patrón detectado
+            context.user_data['upser_series_pattern'] = {
+                'base_name': base_name,
+                'season_num': season_num,
+                'current_episode': episode_num,
+                'format_type': format_type
+            }
+            
+            await update.message.reply_text(
+                f"<blockquote>✅ Serie detectada: <b>{base_name}</b>\n"
+                f"Temporada: {season_num}\n"
+                f"Episodio: {episode_num}\n"
+                f"Los siguientes capítulos usarán este nombre.</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+            
+            # Para el primer capítulo, no es necesario editar el caption
+            caption = original_caption
+        else:
+            # Ya tenemos un patrón, detectar números del capítulo actual
+            series_pattern = context.user_data['upser_series_pattern']
+            base_name = series_pattern['base_name']
+            season_num = series_pattern['season_num']
+            
+            # Buscar si este capítulo tiene números de temporada/episodio
+            num_pattern = re.search(r'(\d+)[xX](\d+)', text_to_search)
+            if not num_pattern:
+                num_pattern = re.search(r'[Ss](\d+)[Ee](\d+)', text_to_search)
+            
+            if num_pattern:
+                # Extraer números de este capítulo
+                if 'x' in text_to_search.lower() or 'X' in text_to_search:
                     current_season = int(num_pattern.group(1))
                     episode_num = int(num_pattern.group(2))
                 else:
                     current_season = int(num_pattern.group(1))
                     episode_num = int(num_pattern.group(2))
                 
-                # Actualizar la temporada si cambió
+                # Actualizar temporada si cambió
                 if current_season != season_num:
                     season_num = current_season
                     series_pattern['season_num'] = season_num
             else:
-                # No tiene patrón, incrementar el episodio
+                # No tiene números, usar el siguiente
                 episode_num = series_pattern['current_episode'] + 1
             
-            # Actualizar el episodio actual
+            # Actualizar episodio actual
             series_pattern['current_episode'] = episode_num
+            
+            # Crear un nuevo caption con el formato correcto
+            if series_pattern['format_type'] == 'x':
+                new_caption = f"{base_name} {season_num:02d}x{episode_num:02d}"
+            else:
+                new_caption = f"{base_name} S{season_num:02d}E{episode_num:02d}"
+            
+            # Verificar si necesitamos actualizar el caption
+            need_update = False
+            if not original_caption:
+                # Caption vacío
+                need_update = True
+            elif base_name.lower() not in original_caption.lower():
+                # Caption no incluye el nombre base
+                need_update = True
+            
+            if need_update:
+                # Aquí está el cambio fundamental: reutilizamos el mensaje en lugar de editarlo
+                # Primero eliminamos el mensaje original
+                try:
+                    await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+                    
+                    # Luego reenviamos el archivo con el nuevo caption
+                    if update.message.video:
+                        # Reenviar video
+                        video_file_id = update.message.video.file_id
+                        new_message = await context.bot.send_video(
+                            chat_id=chat_id,
+                            video=video_file_id,
+                            caption=new_caption
+                        )
+                    elif update.message.document:
+                        # Reenviar documento
+                        doc_file_id = update.message.document.file_id
+                        new_message = await context.bot.send_document(
+                            chat_id=chat_id,
+                            document=doc_file_id,
+                            caption=new_caption
+                        )
+                    
+                    # Actualizar message_id para usar el nuevo mensaje
+                    message_id = new_message.message_id
+                    caption = new_caption
+                    
+                    await update.message.reply_text(
+                        f"<blockquote>✅ Caption actualizado a: <b>{new_caption}</b></blockquote>",
+                        parse_mode=ParseMode.HTML
+                    )
+                except Exception as e:
+                    logger.error(f"Error al reenviar mensaje con nuevo caption: {e}")
+                    caption = original_caption
+            else:
+                caption = original_caption
         
-        # Crear un nuevo caption con el formato correcto
-        if series_pattern['format_type'] == 'x':
-            new_caption = f"{series_pattern['base_name']} {series_pattern['season_num']:02d}x{episode_num:02d}"
-        else:
-            new_caption = f"{series_pattern['base_name']} S{series_pattern['season_num']:02d}E{episode_num:02d}"
-        
-        # Editar el mensaje solo si el caption actual no tiene el nombre base correcto
-        if series_pattern['base_name'] not in original_caption:
-            try:
-                await update.message.edit_caption(caption=new_caption)
-                caption = new_caption  # Usar el nuevo caption
-                await update.message.reply_text(
-                    f"<blockquote>✅ Caption actualizado a: <b>{new_caption}</b></blockquote>",
-                    parse_mode=ParseMode.HTML
-                )
-            except Exception as e:
-                logger.error(f"Error al editar caption: {e}")
-                caption = original_caption  # Mantener el caption original
-        else:
-            caption = original_caption  # Mantener el caption original
-        
-        # Guardar el capítulo con todos sus datos
+        # Guardar el capítulo
         episode_data = {
             'message_id': message_id,
-            'episode_number': episode_num,
+            'episode_number': episode_num if 'episode_num' in locals() else 1,
             'chat_id': chat_id,
             'caption': caption,
             'file_name': file_name
         }
         
         context.user_data.setdefault('upser_episodes', []).append(episode_data)
-        
-        await update.message.reply_text(
-            f"<blockquote>✅ {caption} recibido y guardado.</blockquote>",
-            parse_mode=ParseMode.HTML
-        )
+
 
 async def finalize_series_upload(update: Update, context: ContextTypes.DEFAULT_TYPE, status_message=None) -> None:
     """Finalizar el proceso de carga y subir la serie a los canales"""
