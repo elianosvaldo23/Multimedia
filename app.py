@@ -3221,14 +3221,17 @@ async def upser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         context.user_data['upser_cover'] = None
         context.user_data['upser_description'] = None
         context.user_data['upser_title'] = None  # Para guardar el título detectado
+        context.user_data['upser_series_pattern'] = None  # Para guardar el patrón de nombre de la serie
         
         await update.message.reply_text(
             "📺 <b>Modo de carga de series activado</b>\n\n"
-    "<blockquote>"
+            "<blockquote>"
     		"1️⃣ Envía los capítulos en orden uno por uno\n"
-    		"2️⃣ Al finalizar el envío de los capítulos, envía /upser nuevamente para subir la serie\n"
+    		"2️⃣ Si el primer capítulo tiene formato como 'La que se avecina 01x02', el bot reconocerá el patrón\n"
+            "3️⃣ Los siguientes capítulos se nombrarán automáticamente incrementando el número\n"
+    		"4️⃣ Al finalizar el envío de los capítulos, envía /upser nuevamente para subir la serie\n"
     		"El bot automáticamente buscará la información y portada de la serie\n"
-    "</blockquote>\n"
+            "</blockquote>\n"
             "Para cancelar el proceso, envía /cancelupser",
             parse_mode=ParseMode.HTML
         )
@@ -3239,8 +3242,8 @@ async def upser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         episodes = context.user_data.get('upser_episodes', [])
         if not episodes:
             await update.message.reply_text(
-                "⚠️ No has enviado ningún capítulo todavía.\n\n"
-                "Envía al menos un capítulo antes de finalizar el proceso.",
+                "<blockquote>⚠️ No has enviado ningún capítulo todavía.\n\n"
+                "Envía al menos un capítulo antes de finalizar el proceso.</blockquote>",
                 parse_mode=ParseMode.HTML
             )
             return
@@ -3253,15 +3256,21 @@ async def upser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         elif 'file_name' in first_episode and first_episode['file_name']:
             title_text = first_episode['file_name']
         
-        # Limpiar el título para búsqueda
-        clean_title = re.sub(r'[\._\-]', ' ', title_text)
-        clean_title = re.sub(r'S\d+E\d+|Episode\s*\d+|Cap[ií]tulo\s*\d+|\d+x\d+', '', clean_title, flags=re.IGNORECASE)
-        clean_title = clean_title.strip()
+        # Verificar si tenemos un patrón de serie guardado
+        series_pattern = context.user_data.get('upser_series_pattern')
+        if series_pattern:
+            # Usar el título base de la serie como nombre de búsqueda
+            clean_title = series_pattern['base_name']
+        else:
+            # Limpiar el título para búsqueda si no tenemos patrón
+            clean_title = re.sub(r'[\._\-]', ' ', title_text)
+            clean_title = re.sub(r'S\d+E\d+|Episode\s*\d+|Cap[ií]tulo\s*\d+|\d+x\d+', '', clean_title, flags=re.IGNORECASE)
+            clean_title = clean_title.strip()
         
         # Mensaje de estado para seguir el progreso
         status_message = await update.message.reply_text(
-            f"🔍 Buscando información para: <b>{clean_title}</b>...\n"
-            f"Por favor, espera mientras procesamos tu serie.",
+            f"<blockquote>🔍 Buscando información para: <b>{clean_title}</b>...\n"
+            f"Por favor, espera mientras procesamos tu serie.</blockquote>",
             parse_mode=ParseMode.HTML
         )
         
@@ -3278,7 +3287,7 @@ async def upser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                     f"🎭 <b>Género:</b> {imdb_info['genres']}\n"
                     f"🎬 <b>Director:</b> {imdb_info['directors']}\n"
                     f"👥 <b>Reparto:</b> {imdb_info['cast']}\n\n"
-                    f"📝 <b>Sinopsis:</b>\n<blockquote expandable>{imdb_info['plot']}</blockquote>\n\n"
+                    f"📝 <b>Sinopsis:</b>\n<blockquote>{imdb_info['plot']}</blockquote>\n\n"
                     f"<blockquote>🎬 <b>📌 Canal Principal 📌</b>\n</blockquote>"
                     f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
                 )
@@ -3287,8 +3296,8 @@ async def upser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 if imdb_info['poster_url']:
                     try:
                         await status_message.edit_text(
-                            f"✅ Información encontrada para <b>{imdb_info['title']}</b>\n"
-                            f"📥 Descargando póster...",
+                            f"<blockquote>✅ Información encontrada para <b>{imdb_info['title']}</b>\n"
+                            f"📥 Descargando póster...</blockquote>",
                             parse_mode=ParseMode.HTML
                         )
                         
@@ -3310,8 +3319,8 @@ async def upser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                         
                         # Continuar con la finalización
                         await status_message.edit_text(
-                            "✅ Información y póster encontrados correctamente.\n"
-                            "⏳ Procesando la subida de la serie...",
+                            "<blockquote>✅ Información y póster encontrados correctamente.\n"
+                            "⏳ Procesando la subida de la serie...</blockquote>",
                             parse_mode=ParseMode.HTML
                         )
                         
@@ -3321,9 +3330,9 @@ async def upser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                     except Exception as poster_error:
                         logger.error(f"Error descargando póster: {poster_error}")
                         await status_message.edit_text(
-                            f"✅ Información encontrada para <b>{imdb_info['title']}</b>\n"
+                            f"<blockquote>✅ Información encontrada para <b>{imdb_info['title']}</b>\n"
                             f"❌ Error al descargar el póster: {str(poster_error)[:100]}\n"
-                            f"Por favor, sube manualmente una imagen para la serie.",
+                            f"Por favor, sube manualmente una imagen para la serie.</blockquote>",
                             parse_mode=ParseMode.HTML
                         )
                         # Cambiar al estado de espera de portada
@@ -3331,9 +3340,9 @@ async def upser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
                 else:
                     # No hay póster, pedir al usuario que lo suba
                     await status_message.edit_text(
-                        f"✅ Información encontrada para <b>{imdb_info['title']}</b>\n"
+                        f"<blockquote>✅ Información encontrada para <b>{imdb_info['title']}</b>\n"
                         f"⚠️ No se encontró póster para la serie.\n"
-                        f"Por favor, envía una imagen para usar como portada de la serie.",
+                        f"Por favor, envía una imagen para usar como portada de la serie.</blockquote>",
                         parse_mode=ParseMode.HTML
                     )
                     # Cambiar al estado de espera de portada
@@ -3341,8 +3350,8 @@ async def upser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
             else:
                 # No se encontró información, pedir al usuario que lo proporcione
                 await status_message.edit_text(
-                    f"❌ No se encontró información para <b>{clean_title}</b> en IMDb.\n"
-                    f"Por favor, envía una imagen para usar como portada y proporciona la descripción como pie de foto.",
+                    f"<blockquote>❌ No se encontró información para <b>{clean_title}</b> en IMDb.\n"
+                    f"Por favor, envía una imagen para usar como portada y proporciona la descripción como pie de foto.</blockquote>",
                     parse_mode=ParseMode.HTML
                 )
                 # Cambiar al estado de espera de portada
@@ -3350,8 +3359,8 @@ async def upser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         except Exception as e:
             logger.error(f"Error buscando información en IMDb: {e}")
             await status_message.edit_text(
-                f"❌ Error al buscar información: {str(e)[:100]}\n"
-                f"Por favor, envía una imagen para usar como portada y proporciona la descripción como pie de foto.",
+                f"<blockquote>❌ Error al buscar información: {str(e)[:100]}\n"
+                f"Por favor, envía una imagen para usar como portada y proporciona la descripción como pie de foto.</blockquote>",
                 parse_mode=ParseMode.HTML
             )
             # Cambiar al estado de espera de portada
@@ -3364,7 +3373,7 @@ async def upser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     # Cualquier otro estado (no debería ocurrir)
     else:
         await update.message.reply_text(
-            "❌ Error en el estado de carga de series. Reinicia el proceso con /upser.",
+            "<blockquote>❌ Error en el estado de carga de series. Reinicia el proceso con /upser.</blockquote>",
             parse_mode=ParseMode.HTML
         )
         context.user_data['upser_state'] = UPSER_STATE_IDLE
@@ -3410,30 +3419,117 @@ async def handle_upser_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
         context.user_data['upser_description'] = update.message.caption or "Sin descripción"
         
         await update.message.reply_text(
-            "✅ Portada recibida correctamente.\n\n"
-            "Ahora envía /upser nuevamente para finalizar y subir la serie.",
+            "<blockquote>✅ Portada recibida correctamente.\n\n"
+            "Ahora envía /upser nuevamente para finalizar y subir la serie.</blockquote>",
             parse_mode=ParseMode.HTML
         )
         return
     
     # Si estamos en modo de recepción y recibimos un video/documento, es un capítulo
     if (update.message.video or update.message.document) and upser_state == UPSER_STATE_RECEIVING:
-        # Determinar el número de capítulo
-        episode_number = len(context.user_data.get('upser_episodes', [])) + 1
+        # Verificar si tenemos un patrón de serie establecido o necesitamos detectarlo
+        series_pattern = context.user_data.get('upser_series_pattern')
         
-        # Guardar el capítulo con todos los datos posibles
+        # Obtener información del capítulo
+        message_id = update.message.message_id
+        chat_id = update.effective_chat.id
+        caption = update.message.caption or ""
+        file_name = update.message.document.file_name if update.message.document else None
+        
+        # Detectar patrón en el primer capítulo
+        if not series_pattern:
+            # Buscar un patrón como "Nombre Serie 01x02" o "Nombre Serie S01E02"
+            text_to_search = caption if caption else (file_name or "")
+            pattern_match = re.search(r'(.+?)\s+(\d+)[xX](\d+)|\s*[Ss](\d+)[Ee](\d+)', text_to_search)
+            
+            if pattern_match:
+                if pattern_match.group(1) and pattern_match.group(2) and pattern_match.group(3):
+                    # Formato "Nombre Serie 01x02"
+                    base_name = pattern_match.group(1).strip()
+                    season_num = int(pattern_match.group(2))
+                    episode_num = int(pattern_match.group(3))
+                    format_type = 'x'  # Formato 01x02
+                elif pattern_match.group(4) and pattern_match.group(5):
+                    # Formato "Nombre Serie S01E02"
+                    # Necesitamos extraer el nombre base de otra manera
+                    season_part = f"S{pattern_match.group(4)}E{pattern_match.group(5)}"
+                    base_name = text_to_search.split(season_part)[0].strip()
+                    season_num = int(pattern_match.group(4))
+                    episode_num = int(pattern_match.group(5))
+                    format_type = 'SE'  # Formato S01E02
+                else:
+                    # No se pudo extraer un formato completo, usar valores por defecto
+                    base_name = clean_content_metadata(text_to_search)
+                    season_num = 1
+                    episode_num = 1
+                    format_type = 'x'  # Formato por defecto
+                
+                # Guardar el patrón detectado
+                context.user_data['upser_series_pattern'] = {
+                    'base_name': base_name,
+                    'season_num': season_num,
+                    'last_episode_num': episode_num,
+                    'format_type': format_type
+                }
+                
+                await update.message.reply_text(
+                    f"<blockquote>✅ Detectado patrón de serie: <b>{base_name}</b>\n"
+                    f"Temporada: {season_num}\n"
+                    f"Episodio: {episode_num}\n\n"
+                    f"Los siguientes capítulos seguirán este formato.</blockquote>",
+                    parse_mode=ParseMode.HTML
+                )
+            else:
+                # No se detectó un patrón claro, asignar valores por defecto
+                context.user_data['upser_series_pattern'] = {
+                    'base_name': clean_content_metadata(text_to_search),
+                    'season_num': 1,
+                    'last_episode_num': 1,
+                    'format_type': 'x'  # Formato por defecto
+                }
+        else:
+            # Ya tenemos un patrón, incrementar automáticamente el número de episodio
+            series_pattern['last_episode_num'] += 1
+        
+        # Determinar el número de capítulo
+        if series_pattern:
+            episode_number = series_pattern['last_episode_num']
+            season_number = series_pattern['season_num']
+        else:
+            episode_number = len(context.user_data.get('upser_episodes', [])) + 1
+            season_number = 1
+        
+        # Crear un caption personalizado basado en el patrón si no tiene caption
+        if not caption and series_pattern:
+            base_name = series_pattern['base_name']
+            format_type = series_pattern['format_type']
+            
+            if format_type == 'x':
+                # Formato 01x02
+                caption = f"{base_name} {season_number:02d}x{episode_number:02d}"
+            else:
+                # Formato S01E02
+                caption = f"{base_name} S{season_number:02d}E{episode_number:02d}"
+        
+        # Guardar el capítulo con todos los datos
         episode_data = {
-            'message_id': update.message.message_id,
+            'message_id': message_id,
             'episode_number': episode_number,
-            'chat_id': update.effective_chat.id,
-            'caption': update.message.caption,
-            'file_name': update.message.document.file_name if update.message.document else None
+            'chat_id': chat_id,
+            'caption': caption,
+            'file_name': file_name
         }
         
         context.user_data.setdefault('upser_episodes', []).append(episode_data)
         
+        # Determinar el nombre para mostrar en la confirmación
+        display_name = caption if caption else (
+            f"{series_pattern['base_name']} {season_number:02d}x{episode_number:02d}" 
+            if series_pattern else f"Capítulo {episode_number}"
+        )
+        
         await update.message.reply_text(
-            f"✅ Capítulo {episode_number} recibido y guardado.",
+            f"<blockquote>✅ {display_name} recibido y guardado.</blockquote>",
             parse_mode=ParseMode.HTML
         )
         return
