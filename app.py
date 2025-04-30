@@ -1688,6 +1688,12 @@ async def finalize_load_upload(update, context):
         parse_mode=ParseMode.HTML
     )
     
+    # Variables para usar en finally
+    series_title = "Serie"
+    all_episode_ids = []
+    series_id = None
+    success = False
+    
     try:
         # Obtener datos necesarios
         seasons = context.user_data.get('load_seasons', [])
@@ -1740,7 +1746,6 @@ async def finalize_load_upload(update, context):
         search_channel_cover_id = sent_cover.message_id
         
         # 3.2 Subir cada temporada por separado para evitar timeout
-        all_episode_ids = []
         
         for season_index, season in enumerate(seasons):
             await status_message.edit_text(
@@ -1835,7 +1840,7 @@ async def finalize_load_upload(update, context):
             "<blockquote>⏳ Guardando datos en la base de datos...</blockquote>",
             parse_mode=ParseMode.HTML
         )
-
+        
         try:
             # Guardar la serie
             db.add_series(
@@ -1862,7 +1867,7 @@ async def finalize_load_upload(update, context):
                     episode_number = episode.get('episode_number', 1)
                     message_id = episode.get('message_id')
                     
-                    # Si existe add_episode_with_season
+                    # Usar la nueva función add_episode_with_season
                     try:
                         db.add_episode_with_season(
                             series_id=series_id,
@@ -1870,13 +1875,12 @@ async def finalize_load_upload(update, context):
                             episode_number=episode_number,
                             message_id=message_id
                         )
-                    except Exception:
-                        # Caer en el método original si el nuevo método falla
-                        db.add_episode(
-                            series_id=series_id,
-                            episode_number=episode_number,
-                            message_id=message_id
-                        )
+                    except Exception as episode_error:
+                        logger.error(f"Error guardando episodio con temporada: {episode_error}")
+            
+            # Marcar éxito si llegamos hasta aquí
+            success = True
+        
         except Exception as db_error:
             logger.error(f"Error guardando en base de datos: {db_error}")
             await status_message.edit_text(
@@ -1886,16 +1890,8 @@ async def finalize_load_upload(update, context):
             )
             return
         
-    except Exception as e:
-        logger.error(f"Error en finalize_load_upload: {e}")
-        await status_message.edit_text(
-            f"<blockquote>❌ Error procesando el contenido: {str(e)[:100]}\n"
-            f"Intenta nuevamente.</blockquote>",
-            parse_mode=ParseMode.HTML
-        )
-
     finally:
-        # 4. Reiniciar variables
+        # Siempre reiniciar variables
         context.user_data['load_state'] = LOAD_STATE_INACTIVE
         context.user_data['load_seasons'] = []
         context.user_data['load_current_season'] = {}
@@ -1903,18 +1899,20 @@ async def finalize_load_upload(update, context):
         context.user_data['load_description'] = None
         context.user_data['load_series_title'] = None
         
-        # 5. Informar éxito
-        await status_message.edit_text(
-            f"<blockquote>✅ <b>{series_title}</b> subida correctamente\n\n"
-            f"📊 Detalles:\n"
-            f"- Temporadas: {len(seasons)}\n"
-            f"- Total de episodios: {len(all_episode_ids)}\n"
-            f"- ID de serie: {series_id}\n"
-            f"- Subida a canal principal: ✓\n"
-            f"- Subida a canal de búsqueda: ✓\n\n"
-            f"La serie ya está disponible con el botón 'Ver ahora'.</blockquote>",
-            parse_mode=ParseMode.HTML
-        )
+        # Informar éxito solo si todo fue bien
+        if success and series_id:
+            await status_message.edit_text(
+                f"<blockquote>✅ <b>{series_title}</b> subida correctamente\n\n"
+                f"📊 Detalles:\n"
+                f"- Temporadas: {len(seasons)}\n"
+                f"- Total de episodios: {len(all_episode_ids)}\n"
+                f"- ID de serie: {series_id}\n"
+                f"- Subida a canal principal: ✓\n"
+                f"- Subida a canal de búsqueda: ✓\n\n"
+                f"La serie ya está disponible con el botón 'Ver ahora'.</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+
         
 async def handle_series_seasons_only(update, context, series_id, query=None):
     """Manejar solo la visualización de temporadas (para botón volver)"""
