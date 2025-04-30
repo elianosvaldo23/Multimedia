@@ -70,10 +70,11 @@ UPSER_STATE_IDLE = 0        # No hay carga de serie en proceso
 UPSER_STATE_RECEIVING = 1   # Recibiendo capítulos
 UPSER_STATE_COVER = 2       # Esperando la portada con descripción
 
-# Constantes para el sistema de carga masiva
+# Constantes para el estado de /load
 LOAD_STATE_INACTIVE = 0     # No hay carga masiva en proceso
 LOAD_STATE_WAITING_NAME = 1 # Esperando nombre del contenido
 LOAD_STATE_WAITING_FILES = 2 # Esperando archivos después de recibir nombre
+LOAD_STATE_WAITING_COVER = 3 # Esperando portada después de recibir todas las temporadas
 
 
 # Enable logging
@@ -1113,80 +1114,593 @@ async def finalize_add_upload(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def load_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Comando para iniciar/finalizar la carga masiva de contenido"""
-    user = update.effective_user
-    
     # Verificar que el usuario es administrador
-    if user.id != ADMIN_ID:
+    if not update.effective_user or update.effective_user.id != ADMIN_ID:
         return
     
     # Obtener el estado actual de carga
-    load_state = context.bot_data.get('load_state', LOAD_STATE_INACTIVE)
+    load_state = context.user_data.get('load_state', LOAD_STATE_INACTIVE)
     
-    # Si estamos inactivos, iniciar el proceso
+    # Si estamos en estado IDLE, iniciar el proceso
     if load_state == LOAD_STATE_INACTIVE:
-        # Inicializar estructura de datos para carga masiva
-        context.bot_data['load_state'] = LOAD_STATE_WAITING_NAME
-        context.bot_data['current_content'] = {
-            'name': None,
-            'imdb_info': None,
-            'files': [],
-            'content_type': 'movie',  # Por defecto película, puede cambiar
-            'season_num': None,
-            'title': None
+        # Inicializar la estructura de datos
+        context.user_data['load_state'] = LOAD_STATE_WAITING_NAME
+        context.user_data['load_seasons'] = []  # Lista para almacenar todas las temporadas
+        context.user_data['load_current_season'] = {
+            'title': None,
+            'episodes': [],
+            'season_num': None
         }
+        context.user_data['load_series_title'] = None  # Título general de la serie
         
         await update.message.reply_text(
-            "<blockquote>📥 <b>Modo de carga masiva activado</b>\n\n"
-            "1️⃣ Envía primero el nombre exacto del contenido\n"
-            "2️⃣ El bot buscará información en IMDb\n"
-            "3️⃣ Luego envía todos los archivos de la película o capítulos de la serie\n"
-            "4️⃣ Cuando termines con este contenido, simplemente envía el nombre del siguiente contenido\n"
-            "5️⃣ El bot detectará automáticamente el nuevo nombre y procesará el contenido anterior\n"
-            "6️⃣ Para finalizar el modo de carga masiva, envía /load nuevamente\n\n"
-            "✅ El bot procesará todo con efectos visuales como el comando /upser</blockquote>",
+            "📺 <b>Modo de carga de series mejorado</b>\n\n"
+            "<blockquote>"
+            "1️⃣ Envía el nombre de la temporada (ej: 'La que se avecina: Temporada 1')\n"
+            "2️⃣ Envía todos los capítulos de esa temporada\n"
+            "3️⃣ El bot renombrará automáticamente cada capítulo\n"
+            "4️⃣ Cuando termines una temporada, envía el nombre de la siguiente temporada\n"
+            "5️⃣ Repite el proceso para todas las temporadas que quieras incluir\n"
+            "6️⃣ Al finalizar todas las temporadas, envía /load nuevamente\n"
+            "7️⃣ Envía una imagen con la descripción completa como pie de foto\n"
+            "</blockquote>\n"
+            "Para cancelar el proceso, envía /cancelload",
             parse_mode=ParseMode.HTML
         )
         
-        # Crear mensaje de estado que se actualizará
+        # Crear mensaje de estado
         status_msg = await update.message.reply_text(
-            "<blockquote>⏳ Esperando nombre del primer contenido...</blockquote>",
+            "<blockquote>⏳ Esperando nombre de la primera temporada...</blockquote>",
             parse_mode=ParseMode.HTML
         )
         
         # Guardar referencia al mensaje de estado
-        context.bot_data['load_status_message'] = status_msg
+        context.user_data['load_status_message'] = status_msg
     
-    # Si ya estamos en proceso, finalizar modo carga
-    else:
-        # Verificar si hay contenido pendiente por procesar
-        current_content = context.bot_data.get('current_content', {})
-        if current_content.get('files'):
-            # Procesar el contenido pendiente antes de finalizar
-            await finalize_current_content(update, context)
+    # Si estamos esperando archivos, finalizar esta temporada y esperar la siguiente
+    elif load_state == LOAD_STATE_WAITING_FILES:
+        current_season = context.user_data.get('load_current_season', {})
+        if not current_season.get('episodes'):
+            await update.message.reply_text(
+                "<blockquote>⚠️ No has enviado ningún capítulo para esta temporada.\n"
+                "Envía al menos un capítulo o usa /cancelload para cancelar.</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+            return
+            
+        # Guardar la temporada actual en la lista de temporadas
+        context.user_data['load_seasons'].append(current_season.copy())
         
-        # Finalizar el modo de carga
-        context.bot_data['load_state'] = LOAD_STATE_INACTIVE
-        
-        # Informar sobre resultado final
+        # Informar al administrador
+        season_title = current_season.get('title', 'Temporada')
+        num_episodes = len(current_season.get('episodes', []))
         await update.message.reply_text(
-            "<blockquote>✅ <b>Modo de carga masiva finalizado</b>\n\n"
-            "Puedes iniciar una nueva sesión de carga con /load cuando lo necesites.</blockquote>",
+            f"<blockquote>✅ Temporada '<b>{season_title}</b>' completada con {num_episodes} capítulos.\n\n"
+            f"Ahora envía el nombre de la siguiente temporada o /load para finalizar todas las temporadas.</blockquote>",
             parse_mode=ParseMode.HTML
         )
         
-        # Limpiar datos
-        if 'load_status_message' in context.bot_data:
+        # Inicializar nueva temporada vacía
+        context.user_data['load_current_season'] = {
+            'title': None,
+            'episodes': [],
+            'season_num': None
+        }
+        
+        # Volver al estado de esperar nombre
+        context.user_data['load_state'] = LOAD_STATE_WAITING_NAME
+        
+        # Actualizar mensaje de estado
+        await update_load_status(update, context)
+    
+    # Si estamos esperando nombre de temporada, significa que han terminado todas las temporadas
+    elif load_state == LOAD_STATE_WAITING_NAME:
+        seasons = context.user_data.get('load_seasons', [])
+        if not seasons:
+            await update.message.reply_text(
+                "<blockquote>⚠️ No has añadido ninguna temporada todavía.\n"
+                "Primero envía el nombre de al menos una temporada.</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+            return
+        
+        # Cambiar al estado de esperar portada
+        context.user_data['load_state'] = LOAD_STATE_WAITING_COVER
+        
+        await update.message.reply_text(
+            f"<blockquote>✅ Se han completado {len(seasons)} temporadas.\n\n"
+            f"Ahora envía una imagen para usar como portada con la descripción completa como pie de foto.</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+    
+    # Si estamos en modo espera de portada y ya hay una portada, finalizar
+    elif load_state == LOAD_STATE_WAITING_COVER and context.user_data.get('load_cover'):
+        await finalize_load_upload(update, context)
+    
+    # Cualquier otro estado
+    else:
+        await update.message.reply_text(
+            "<blockquote>❌ Estado del proceso no reconocido. Por favor, use /cancelload para reiniciar.</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+
+async def cancel_load_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Cancelar el proceso de carga masiva"""
+    # Verificar que el usuario es administrador
+    if not update.effective_user or update.effective_user.id != ADMIN_ID:
+        return
+    
+    # Reiniciar variables
+    context.user_data['load_state'] = LOAD_STATE_INACTIVE
+    context.user_data['load_seasons'] = []
+    context.user_data['load_current_season'] = {}
+    context.user_data['load_cover'] = None
+    context.user_data['load_description'] = None
+    context.user_data['load_series_title'] = None
+    
+    await update.message.reply_text(
+        "<blockquote>❌ Proceso de carga de series cancelado.\n\n"
+        "Todos los datos temporales han sido eliminados.</blockquote>",
+        parse_mode=ParseMode.HTML
+    )
+
+async def handle_load_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manejar el nombre de temporada en modo carga masiva"""
+    # Verificar que el usuario es administrador
+    if not update.effective_user or update.effective_user.id != ADMIN_ID:
+        return
+    
+    # Verificar si estamos esperando nombre de temporada
+    load_state = context.user_data.get('load_state', LOAD_STATE_INACTIVE)
+    if load_state != LOAD_STATE_WAITING_NAME:
+        return  # No estamos esperando nombre
+    
+    # Si hay una temporada en proceso con episodios, guardarla primero
+    current_season = context.user_data.get('load_current_season', {})
+    if current_season.get('episodes'):
+        # Guardar la temporada actual
+        context.user_data['load_seasons'].append(current_season.copy())
+        # Inicializar nueva temporada
+        context.user_data['load_current_season'] = {
+            'title': None,
+            'episodes': [],
+            'season_num': None
+        }
+    
+    # Obtener el nombre de la temporada
+    season_name = update.message.text.strip()
+    
+    # Extraer número de temporada y título general de la serie
+    season_match = re.search(r'(.+?)(?:\s*(?:temporada|season|t|s)\s*(\d+))', season_name, re.IGNORECASE)
+    
+    if season_match:
+        series_title = season_match.group(1).strip()
+        season_num = int(season_match.group(2))
+    else:
+        # No se encontró formato estándar, usar valores por defecto
+        series_title = season_name
+        # Intentar determinar la siguiente temporada si ya hay temporadas
+        if context.user_data.get('load_seasons'):
+            season_num = len(context.user_data.get('load_seasons')) + 1
+        else:
+            season_num = 1
+    
+    # Guardar información de la serie general si es la primera temporada
+    if not context.user_data.get('load_series_title'):
+        context.user_data['load_series_title'] = series_title
+    
+    # Actualizar la temporada actual
+    context.user_data['load_current_season'] = {
+        'title': season_name,
+        'episodes': [],
+        'season_num': season_num,
+        'base_name': series_title,
+        'current_episode': 0
+    }
+    
+    # Cambiar al estado de esperar archivos
+    context.user_data['load_state'] = LOAD_STATE_WAITING_FILES
+    
+    await update.message.reply_text(
+        f"<blockquote>✅ Temporada registrada: <b>{season_name}</b>\n"
+        f"Nombre base: {series_title}\n"
+        f"Número de temporada: {season_num}\n\n"
+        f"Ahora envía los capítulos en orden.\n"
+        f"Cuando termines esta temporada, envía /load.</blockquote>",
+        parse_mode=ParseMode.HTML
+    )
+    
+    # Actualizar mensaje de estado
+    await update_load_status(update, context)
+
+async def handle_load_files(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manejar archivos en modo carga masiva"""
+    # Verificar que el usuario es administrador
+    if not update.effective_user or update.effective_user.id != ADMIN_ID:
+        return
+    
+    # Verificar si estamos esperando archivos
+    load_state = context.user_data.get('load_state', LOAD_STATE_INACTIVE)
+    if load_state != LOAD_STATE_WAITING_FILES:
+        return  # No estamos esperando archivos
+    
+    # Obtener la temporada actual
+    current_season = context.user_data.get('load_current_season', {})
+    if not current_season:
+        await update.message.reply_text(
+            "<blockquote>❌ Error: No hay información de temporada.\n"
+            "Usa /cancelload para reiniciar el proceso.</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        return
+    
+    # Procesar el archivo recibido (video o documento)
+    if update.message.video or update.message.document:
+        # Obtener información del archivo
+        message_id = update.message.message_id
+        chat_id = update.effective_chat.id
+        original_caption = update.message.caption or ""
+        file_name = update.message.document.file_name if update.message.document else None
+        
+        # Incrementar número de episodio
+        episode_num = current_season.get('current_episode', 0) + 1
+        current_season['current_episode'] = episode_num
+        
+        # Crear nuevo caption con el formato correcto
+        base_name = current_season.get('base_name', 'Serie')
+        season_num = current_season.get('season_num', 1)
+        new_caption = f"{base_name} {season_num:02d}x{episode_num:02d}"
+        
+        # Verificar si el caption necesita ser actualizado
+        if base_name.lower() not in original_caption.lower():
             try:
-                status_msg = context.bot_data['load_status_message']
-                await status_msg.edit_text(
-                    "<blockquote>✅ Proceso de carga masiva completado y finalizado.</blockquote>",
+                # Obtener el file_id
+                if update.message.video:
+                    file_id = update.message.video.file_id
+                    # Borrar el mensaje original
+                    await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+                    # Enviar nuevo mensaje con caption correcto
+                    new_message = await context.bot.send_video(
+                        chat_id=chat_id,
+                        video=file_id,
+                        caption=new_caption
+                    )
+                    # Actualizar message_id
+                    message_id = new_message.message_id
+                elif update.message.document:
+                    file_id = update.message.document.file_id
+                    # Borrar el mensaje original
+                    await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+                    # Enviar nuevo mensaje con caption correcto
+                    new_message = await context.bot.send_document(
+                        chat_id=chat_id,
+                        document=file_id,
+                        caption=new_caption
+                    )
+                    # Actualizar message_id
+                    message_id = new_message.message_id
+                
+                # Notificar el cambio
+                await update.message.reply_text(
+                    f"<blockquote>✅ Nombre actualizado: <b>{new_caption}</b></blockquote>",
                     parse_mode=ParseMode.HTML
                 )
+                
+                # Usar el nuevo caption
+                caption = new_caption
             except Exception as e:
-                logger.error(f"Error al actualizar mensaje de estado final: {e}")
+                logger.error(f"Error al reenviar con nuevo caption: {e}")
+                caption = original_caption
+        else:
+            caption = original_caption
         
-        context.bot_data.pop('current_content', None)
-        context.bot_data.pop('load_status_message', None)
+        # Guardar el episodio
+        episode_data = {
+            'message_id': message_id,
+            'episode_number': episode_num,
+            'chat_id': chat_id,
+            'caption': caption,
+            'file_name': file_name
+        }
+        
+        # Añadir a la lista de episodios de la temporada actual
+        current_season.setdefault('episodes', []).append(episode_data)
+        
+        # Confirmar recepción
+        await update.message.reply_text(
+            f"<blockquote>✅ Capítulo {episode_num} de temporada {season_num} recibido y guardado.</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        
+        # Actualizar estado
+        await update_load_status(update, context)
+
+async def handle_load_cover(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manejar la recepción de la portada"""
+    # Verificar que el usuario es administrador
+    if not update.effective_user or update.effective_user.id != ADMIN_ID:
+        return
+    
+    # Verificar si estamos esperando portada
+    load_state = context.user_data.get('load_state', LOAD_STATE_INACTIVE)
+    if load_state != LOAD_STATE_WAITING_COVER:
+        return  # No estamos esperando portada
+    
+    # Procesar la imagen recibida
+    if update.message.photo:
+        # Guardar la portada y descripción
+        context.user_data['load_cover'] = update.message.photo[-1].file_id
+        context.user_data['load_description'] = update.message.caption or ""
+        
+        # Finalizar automáticamente el proceso
+        await update.message.reply_text(
+            "<blockquote>✅ Portada recibida correctamente.\n"
+            "Procesando la subida de todas las temporadas...</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        
+        # Procesar la subida
+        await finalize_load_upload(update, context)
+        
+async def update_load_status(update, context):
+    """Actualizar mensaje de estado con información actual"""
+    try:
+        status_msg = context.user_data.get('load_status_message')
+        if not status_msg:
+            return
+            
+        # Obtener información actual
+        load_state = context.user_data.get('load_state', LOAD_STATE_INACTIVE)
+        seasons = context.user_data.get('load_seasons', [])
+        current_season = context.user_data.get('load_current_season', {})
+        
+        status_text = "<blockquote>📊 <b>Estado de la carga</b>\n\n"
+        
+        # Mostrar temporadas completadas
+        if seasons:
+            status_text += f"✅ <b>Temporadas completadas:</b> {len(seasons)}\n"
+            for i, season in enumerate(seasons, 1):
+                season_title = season.get('title', f'Temporada {i}')
+                num_episodes = len(season.get('episodes', []))
+                status_text += f"   {i}. <b>{season_title}</b> - {num_episodes} episodios\n"
+            status_text += "\n"
+        
+        # Mostrar temporada actual en proceso
+        if current_season.get('title'):
+            status_text += f"🔄 <b>Temporada actual:</b> {current_season.get('title')}\n"
+            num_episodes = len(current_season.get('episodes', []))
+            status_text += f"   Episodios: {num_episodes}\n\n"
+        
+        # Mostrar siguiente paso según el estado
+        if load_state == LOAD_STATE_WAITING_NAME:
+            status_text += "⏳ <b>Esperando:</b> Nombre de la siguiente temporada\n"
+            status_text += "   o /load para finalizar y añadir portada\n"
+        elif load_state == LOAD_STATE_WAITING_FILES:
+            status_text += "⏳ <b>Esperando:</b> Capítulos para esta temporada\n"
+            status_text += "   /load cuando termines esta temporada\n"
+        elif load_state == LOAD_STATE_WAITING_COVER:
+            status_text += "⏳ <b>Esperando:</b> Imagen de portada con descripción\n"
+        
+        status_text += "</blockquote>"
+        
+        await status_msg.edit_text(
+            status_text,
+            parse_mode=ParseMode.HTML
+        )
+    except Exception as e:
+        logger.error(f"Error actualizando estado: {e}")
+
+async def finalize_load_upload(update, context):
+    """Finalizar el proceso y subir todas las temporadas"""
+    # Crear mensaje de estado
+    status_message = await update.message.reply_text(
+        "<blockquote>⏳ Procesando todas las temporadas...</blockquote>",
+        parse_mode=ParseMode.HTML
+    )
+    
+    try:
+        # Obtener datos necesarios
+        seasons = context.user_data.get('load_seasons', [])
+        cover_photo = context.user_data.get('load_cover')
+        description = context.user_data.get('load_description', "")
+        series_title = context.user_data.get('load_series_title', "Serie")
+        
+        # Verificar datos
+        if not seasons or not cover_photo:
+            await status_message.edit_text(
+                "<blockquote>❌ Faltan datos necesarios para completar el proceso.\n"
+                "Debe haber al menos una temporada y una portada.</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+            return
+        
+        # 1. Crear ID único para esta serie
+        series_id = int(time.time())
+        
+        # 2. Formatear descripción si es necesario
+        if not description:
+            description = f"<b>{series_title}</b>"
+        elif "<b>" not in description and series_title:
+            description = f"<b>{series_title}</b>\n\n{description}"
+        
+        # Asegurarse que la sinopsis usa el formato de cita expandible
+        if "📝 Sinopsis:" in description and "<blockquote" not in description:
+            # Buscar la sinopsis y aplicar formato expandible
+            sinopsis_match = re.search(r'(📝 Sinopsis:)\s*(.*?)(?=$|\n\n)', description, re.DOTALL)
+            if sinopsis_match:
+                sinopsis_header = sinopsis_match.group(1)
+                sinopsis_text = sinopsis_match.group(2).strip()
+                formatted_sinopsis = f"{sinopsis_header}\n<blockquote expandable>{sinopsis_text}</blockquote>"
+                description = description.replace(sinopsis_match.group(0), formatted_sinopsis)
+        
+        # 3. Dividir el proceso en pasos más pequeños para evitar timeout
+        # 3.1 Subir portada a canal de búsqueda
+        await status_message.edit_text(
+            "<blockquote>⏳ Subiendo portada al canal de búsqueda...</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        
+        sent_cover = await context.bot.send_photo(
+            chat_id=SEARCH_CHANNEL_ID,
+            photo=cover_photo,
+            caption=description,
+            parse_mode=ParseMode.HTML
+        )
+        
+        search_channel_cover_id = sent_cover.message_id
+        
+        # 3.2 Subir cada temporada por separado para evitar timeout
+        all_episode_ids = []
+        
+        for season_index, season in enumerate(seasons):
+            await status_message.edit_text(
+                f"<blockquote>⏳ Procesando temporada {season_index + 1} de {len(seasons)}...</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+            
+            season_episodes = season.get('episodes', [])
+            season_episode_ids = []
+            
+            # Procesar en grupos más pequeños
+            episode_groups = [season_episodes[i:i+3] for i in range(0, len(season_episodes), 3)]
+            
+            for group_index, group in enumerate(episode_groups):
+                await status_message.edit_text(
+                    f"<blockquote>⏳ Subiendo capítulos de temporada {season_index + 1}... "
+                    f"({group_index*3+1}-{min((group_index+1)*3, len(season_episodes))}/{len(season_episodes)})</blockquote>",
+                    parse_mode=ParseMode.HTML
+                )
+                
+                for episode in group:
+                    try:
+                        # Copiar el episodio al canal
+                        result = await context.bot.copy_message(
+                            chat_id=SEARCH_CHANNEL_ID,
+                            from_chat_id=episode['chat_id'],
+                            message_id=episode['message_id'],
+                            disable_notification=True
+                        )
+                        
+                        season_episode_ids.append(result.message_id)
+                        all_episode_ids.append({
+                            'season': season_index + 1,
+                            'episode': episode['episode_number'],
+                            'message_id': result.message_id
+                        })
+                        
+                        # Pequeña pausa para evitar problemas
+                        await asyncio.sleep(0.3)
+                    except Exception as e:
+                        logger.error(f"Error copiando episodio: {e}")
+                        await asyncio.sleep(1)  # Pausa más larga si hay error
+            
+            await asyncio.sleep(1)  # Pausa entre temporadas
+        
+        # 3.3 Crear botón "Ver ahora"
+        view_url = f"https://t.me/MultimediaTVbot?start=series_{series_id}"
+        keyboard = [
+            [InlineKeyboardButton("Ver ahora", url=view_url)]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # 3.4 Agregar botón a la portada en el canal de búsqueda
+        try:
+            await context.bot.edit_message_reply_markup(
+                chat_id=SEARCH_CHANNEL_ID,
+                message_id=search_channel_cover_id,
+                reply_markup=reply_markup
+            )
+        except Exception as e:
+            logger.error(f"Error añadiendo botón a portada: {e}")
+        
+        # 3.5 Subir portada al canal principal
+        await status_message.edit_text(
+            "<blockquote>⏳ Subiendo portada al canal principal...</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        
+        try:
+            sent_cover_main = await context.bot.send_photo(
+                chat_id=CHANNEL_ID,
+                photo=cover_photo,
+                caption=description,
+                parse_mode=ParseMode.HTML
+            )
+            
+            # Agregar el mismo botón a la portada del canal principal
+            await context.bot.edit_message_reply_markup(
+                chat_id=CHANNEL_ID,
+                message_id=sent_cover_main.message_id,
+                reply_markup=reply_markup
+            )
+        except Exception as e:
+            logger.error(f"Error subiendo portada al canal principal: {e}")
+            await status_message.edit_text(
+                f"<blockquote>⚠️ Error al subir portada al canal principal, pero los episodios ya están en el canal de búsqueda.</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+        
+        # 3.6 Guardar en la base de datos
+        await status_message.edit_text(
+            "<blockquote>⏳ Guardando datos en la base de datos...</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        
+        try:
+            # Guardar la serie
+            db.add_series(
+                series_id=series_id,
+                title=series_title,
+                description=description,
+                cover_message_id=search_channel_cover_id,
+                added_by=update.effective_user.id
+            )
+            
+            # Guardar cada episodio
+            for episode_info in all_episode_ids:
+                db.add_episode(
+                    series_id=series_id,
+                    episode_number=episode_info['episode'],
+                    message_id=episode_info['message_id'],
+                    season=episode_info['season']  # Opcional: si tu esquema soporta temporadas
+                )
+        except Exception as db_error:
+            logger.error(f"Error guardando en base de datos: {db_error}")
+            await status_message.edit_text(
+                f"<blockquote>⚠️ Error al guardar en la base de datos: {str(db_error)[:100]}\n"
+                f"La serie está subida a los canales pero puede haber problemas con los botones.</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+            return
+        
+        # 4. Reiniciar variables
+        context.user_data['load_state'] = LOAD_STATE_INACTIVE
+        context.user_data['load_seasons'] = []
+        context.user_data['load_current_season'] = {}
+        context.user_data['load_cover'] = None
+        context.user_data['load_description'] = None
+        context.user_data['load_series_title'] = None
+        
+        # 5. Informar éxito
+        await status_message.edit_text(
+            f"<blockquote>✅ <b>{series_title}</b> subida correctamente\n\n"
+            f"📊 Detalles:\n"
+            f"- Temporadas: {len(seasons)}\n"
+            f"- Total de episodios: {len(all_episode_ids)}\n"
+            f"- ID de serie: {series_id}\n"
+            f"- Subida a canal principal: ✓\n"
+            f"- Subida a canal de búsqueda: ✓\n\n"
+            f"La serie ya está disponible con el botón 'Ver ahora'.</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        
+    except Exception as e:
+        logger.error(f"Error en finalize_load_upload: {e}")
+        await status_message.edit_text(
+            f"<blockquote>❌ Error procesando el contenido: {str(e)[:100]}\n"
+            f"Intenta nuevamente.</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
 
 async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manejar recepción de nombre de contenido en modo carga masiva"""
@@ -4618,6 +5132,7 @@ def main() -> None:
     application.add_handler(CommandHandler("imdb", imdb_command))
     application.add_handler(CommandHandler("plan", set_user_plan))
     application.add_handler(CommandHandler("load", load_command))
+    application.add_handler(CommandHandler("cancelload", cancel_load_command))
     application.add_handler(CommandHandler("upser", upser_command))
     application.add_handler(CommandHandler("cancelupser", cancel_upser_command))
     application.add_handler(CommandHandler("add", add_command))
@@ -4660,6 +5175,22 @@ def main() -> None:
         (filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
         handle_load_content,
     ), group=-10)  # Alta prioridad
+    
+# Manejadores para los diferentes tipos de mensajes en modo load
+    application.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
+        handle_load_name,
+    ), group=-12)  # Mayor prioridad que handle_add_name
+
+    application.add_handler(MessageHandler(
+        (filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
+        handle_load_files,
+    ), group=-12)  # Mayor prioridad que handle_add_content
+
+    application.add_handler(MessageHandler(
+        filters.PHOTO & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
+        handle_load_cover,
+    ), group=-12)  # Mayor prioridad que otros manejadores    
     
     application.add_handler(MessageHandler(
         (filters.PHOTO | filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND,
