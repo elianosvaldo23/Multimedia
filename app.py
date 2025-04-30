@@ -475,20 +475,31 @@ async def handle_season_callback(query, context, series_id, season_number):
         
         # Crear botones para los episodios
         keyboard = []
-        
+
         # Añadir un botón para cada episodio, organizados en filas de 3
         for i in range(0, len(episodes), 3):
             row = []
             for j in range(i, min(i + 3, len(episodes))):
                 episode = episodes[j]
                 ep_num = episode.get('episode_number', j+1)
+                
+                # Verificar que el message_id sea un valor válido
+                msg_id = episode.get('message_id')
+                if not msg_id:
+                    # Si no hay message_id, no crear botón para este episodio
+                    logger.error(f"Episodio {ep_num} sin message_id válido")
+                    continue
+                    
                 row.append(
                     InlineKeyboardButton(
                         f"Capítulo {ep_num}",
-                        callback_data=f"ep_{series_id}_{episode['message_id']}_direct"
+                        callback_data=f"ep_{series_id}_{msg_id}_direct"
                     )
                 )
-            keyboard.append(row)
+            
+            # Solo añadir la fila si tiene botones
+            if row:
+                keyboard.append(row)
         
         # Añadir botón para enviar todos los episodios de esta temporada
         keyboard.append([
@@ -527,6 +538,7 @@ async def handle_season_callback(query, context, series_id, season_number):
     except Exception as e:
         logger.error(f"Error mostrando temporada: {e}")
         await query.answer(f"Error: {str(e)[:50]}")
+
 
 async def send_episode(query, context, series_id, episode_number):
     """Enviar un capítulo específico al usuario"""
@@ -1746,6 +1758,7 @@ async def finalize_load_upload(update, context):
         search_channel_cover_id = sent_cover.message_id
         
         # 3.2 Subir cada temporada por separado para evitar timeout
+        all_episode_ids = []
         
         for season_index, season in enumerate(seasons):
             await status_message.edit_text(
@@ -1768,127 +1781,199 @@ async def finalize_load_upload(update, context):
                 
                 for episode in group:
                     try:
+                        # Guardar el mensaje original para posterior referencia
+                        original_message_id = episode['message_id']
+                        original_chat_id = episode['chat_id']
+                        
                         # Copiar el episodio al canal
                         result = await context.bot.copy_message(
                             chat_id=SEARCH_CHANNEL_ID,
-                            from_chat_id=episode['chat_id'],
-                            message_id=episode['message_id'],
+                            from_chat_id=original_chat_id,
+                            message_id=original_message_id,
                             disable_notification=True
                         )
                         
-                        season_episode_ids.append(result.message_id)
-                        all_episode_ids.append({
-                            'season': season_index + 1,
-                            'episode': episode['episode_number'],
-                            'message_id': result.message_id
-                        })
+                        # Verificar que el mensaje se copió correctamente
+                        if not result or not result.message_id:
+                            logger.error(f"Error: Resultado de copia vacío para episodio {episode['episode_number']}")
+                            continue
+                            
+                        # Guardar el nuevo message_id
+                        episode_message_id = result.message_id
+                        
+                        # Verificar que el mensaje realmente existe en el canal de búsqueda
+                        try:
+                            await asyncio.sleep(0.5)  # Pequeña pausa para asegurar que el mensaje está disponible
+                            test_msg = await context.bot.forward_message(
+                                chat_id=update.effective_chat.id,
+                                from_chat_id=SEARCH_CHANNEL_ID,
+                                message_id=episode_message_id,
+                                disable_notification=True
+                            )
+                            
+                            # Si llega aquí, el mensaje existe
+                            await context.bot.delete_message(
+                                chat_id=update.effective_chat.id,
+                                message_id=test_msg.message_id
+                            )
+                            
+                            # Solo ahora añadimos el episodio a la lista
+                            season_episode_ids.append(episode_message_id)
+                            all_episode_ids.append({
+                                'season': season_index + 1,
+                                'episode': episode['episode_number'],
+                                'message_id': episode_message_id
+                            })
+                            
+                            logger.info(f"Episodio {episode['episode_number']} subido correctamente con ID: {episode_message_id}")
+                            
+                        except Exception as verify_e:
+                            logger.error(f"Error verificando mensaje: {verify_e}")
+                            # No añadir este episodio a la lista
                         
                         # Pequeña pausa para evitar problemas
-                        await asyncio.sleep(0.3)
+                        await asyncio.sleep(1.0)  # Pausa más larga para asegurar estabilidad
                     except Exception as e:
                         logger.error(f"Error copiando episodio: {e}")
-                        await asyncio.sleep(1)  # Pausa más larga si hay error
+                        await asyncio.sleep(2.0)  # Pausa aún más larga si hay error
+                
+                await asyncio.sleep(2.0)  # Pausa entre grupos de episodios
             
-            await asyncio.sleep(1)  # Pausa entre temporadas
-        
-        # 3.3 Crear botón "Ver ahora"
-        view_url = f"https://t.me/MultimediaTVbot?start=series_{series_id}"
-        keyboard = [
-            [InlineKeyboardButton("Ver ahora", url=view_url)]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        # 3.4 Agregar botón a la portada en el canal de búsqueda
-        try:
-            await context.bot.edit_message_reply_markup(
-                chat_id=SEARCH_CHANNEL_ID,
-                message_id=search_channel_cover_id,
-                reply_markup=reply_markup
-            )
-        except Exception as e:
-            logger.error(f"Error añadiendo botón a portada: {e}")
-        
-        # 3.5 Subir portada al canal principal
-        await status_message.edit_text(
-            "<blockquote>⏳ Subiendo portada al canal principal...</blockquote>",
-            parse_mode=ParseMode.HTML
-        )
-        
-        try:
-            sent_cover_main = await context.bot.send_photo(
-                chat_id=CHANNEL_ID,
-                photo=cover_photo,
-                caption=description,
-                parse_mode=ParseMode.HTML
-            )
+            await asyncio.sleep(3.0)  # Pausa entre temporadas
             
-            # Agregar el mismo botón a la portada del canal principal
-            await context.bot.edit_message_reply_markup(
-                chat_id=CHANNEL_ID,
-                message_id=sent_cover_main.message_id,
-                reply_markup=reply_markup
-            )
-        except Exception as e:
-            logger.error(f"Error subiendo portada al canal principal: {e}")
+            # 3.3 Crear botón "Ver ahora"
+            view_url = f"https://t.me/MultimediaTVbot?start=series_{series_id}"
+            keyboard = [
+                [InlineKeyboardButton("Ver ahora", url=view_url)]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            # 3.4 Agregar botón a la portada en el canal de búsqueda
+            try:
+                await context.bot.edit_message_reply_markup(
+                    chat_id=SEARCH_CHANNEL_ID,
+                    message_id=search_channel_cover_id,
+                    reply_markup=reply_markup
+                )
+            except Exception as e:
+                logger.error(f"Error añadiendo botón a portada: {e}")
+            
+            # 3.5 Subir portada al canal principal
             await status_message.edit_text(
-                f"<blockquote>⚠️ Error al subir portada al canal principal, pero los episodios ya están en el canal de búsqueda.</blockquote>",
+                "<blockquote>⏳ Subiendo portada al canal principal...</blockquote>",
                 parse_mode=ParseMode.HTML
             )
-        
-        # 3.6 Guardar en la base de datos
-        await status_message.edit_text(
-            "<blockquote>⏳ Guardando datos en la base de datos...</blockquote>",
-            parse_mode=ParseMode.HTML
-        )
-        
-        try:
-            # Guardar la serie
-            db.add_series(
-                series_id=series_id,
-                title=series_title,
-                description=description,
-                cover_message_id=search_channel_cover_id,
-                added_by=update.effective_user.id
+            
+            try:
+                sent_cover_main = await context.bot.send_photo(
+                    chat_id=CHANNEL_ID,
+                    photo=cover_photo,
+                    caption=description,
+                    parse_mode=ParseMode.HTML
+                )
+                
+                # Agregar el mismo botón a la portada del canal principal
+                await context.bot.edit_message_reply_markup(
+                    chat_id=CHANNEL_ID,
+                    message_id=sent_cover_main.message_id,
+                    reply_markup=reply_markup
+                )
+            except Exception as e:
+                logger.error(f"Error subiendo portada al canal principal: {e}")
+                await status_message.edit_text(
+                    f"<blockquote>⚠️ Error al subir portada al canal principal, pero los episodios ya están en el canal de búsqueda.</blockquote>",
+                    parse_mode=ParseMode.HTML
+                )
+            
+            # 3.6 Guardar en la base de datos
+            await status_message.edit_text(
+                "<blockquote>⏳ Guardando datos en la base de datos...</blockquote>",
+                parse_mode=ParseMode.HTML
             )
             
-            # Guardar cada temporada y sus episodios
-            for season_index, season in enumerate(seasons):
-                season_number = season_index + 1
-                season_title = season.get('title', f"Temporada {season_number}")
+            try:
+                # Guardar la serie
+                db.add_series(
+                    series_id=series_id,
+                    title=series_title,
+                    description=description,
+                    cover_message_id=search_channel_cover_id,
+                    added_by=update.effective_user.id
+                )
                 
-                # Añadir la temporada a la base de datos
-                try:
-                    db.add_season(series_id, season_number, season_title)
-                except Exception as season_error:
-                    logger.warning(f"Error guardando temporada {season_number}: {season_error}")
+                # Guardar cada temporada y sus episodios
+                episodios_guardados = 0
+                episodios_fallidos = 0
                 
-                # Guardar episodios de esta temporada
-                for episode in season.get('episodes', []):
-                    episode_number = episode.get('episode_number', 1)
-                    message_id = episode.get('message_id')
+                for season_index, season_info in enumerate(seasons):
+                    season_number = season_index + 1
+                    season_title = season_info.get('title', f"Temporada {season_number}")
                     
-                    # Usar la nueva función add_episode_with_season
+                    # Intentar añadir la temporada a la base de datos
                     try:
-                        db.add_episode_with_season(
-                            series_id=series_id,
-                            season_number=season_number,
-                            episode_number=episode_number,
-                            message_id=message_id
-                        )
-                    except Exception as episode_error:
-                        logger.error(f"Error guardando episodio con temporada: {episode_error}")
-            
-            # Marcar éxito si llegamos hasta aquí
-            success = True
+                        # Si existe el método add_season
+                        try:
+                            db.add_season(series_id, season_number, season_title)
+                        except Exception:
+                            logger.warning(f"Método add_season no disponible. Continuando sin él.")
+                    except Exception as season_error:
+                        logger.warning(f"Error guardando temporada {season_number}: {season_error}")
+                
+                # Filtrar solo los episodios válidos
+                valid_episodes = [ep for ep in all_episode_ids if ep.get('message_id')]
+                
+                # Guardar episodios en grupos pequeños
+                episode_groups = [valid_episodes[i:i+5] for i in range(0, len(valid_episodes), 5)]
+                
+                for group in episode_groups:
+                    for episode_info in group:
+                        try:
+                            # Intentar usar add_episode_with_season si está disponible
+                            try:
+                                db.add_episode_with_season(
+                                    series_id=series_id,
+                                    season_number=episode_info['season'],
+                                    episode_number=episode_info['episode'],
+                                    message_id=episode_info['message_id']
+                                )
+                            except Exception:
+                                # Si no está disponible, usar el método original
+                                db.add_episode(
+                                    series_id=series_id,
+                                    episode_number=episode_info['episode'],
+                                    message_id=episode_info['message_id']
+                                )
+                            episodios_guardados += 1
+                        except Exception as ep_error:
+                            logger.error(f"Error guardando episodio: {ep_error}")
+                            episodios_fallidos += 1
+                    
+                    # Pequeña pausa entre grupos
+                    await asyncio.sleep(0.5)
+                    
+                # Informar sobre guardar en base de datos
+                await status_message.edit_text(
+                    f"<blockquote>✅ Serie guardada en base de datos\n"
+                    f"Episodios guardados: {episodios_guardados}\n"
+                    f"Episodios fallidos: {episodios_fallidos}</blockquote>",
+                    parse_mode=ParseMode.HTML
+                )
+                
+            except Exception as db_error:
+                logger.error(f"Error guardando en base de datos: {db_error}")
+                await status_message.edit_text(
+                    f"<blockquote>⚠️ Error al guardar en la base de datos: {str(db_error)[:100]}\n"
+                    f"La serie está subida a los canales pero puede haber problemas con los botones.</blockquote>",
+                    parse_mode=ParseMode.HTML
+                )
+                await asyncio.sleep(2)
         
-        except Exception as db_error:
-            logger.error(f"Error guardando en base de datos: {db_error}")
-            await status_message.edit_text(
-                f"<blockquote>⚠️ Error al guardar en la base de datos: {str(db_error)[:100]}\n"
-                f"La serie está subida a los canales pero puede haber problemas con los botones.</blockquote>",
-                parse_mode=ParseMode.HTML
-            )
-            return
+    except Exception as e:
+        logger.error(f"Error en el proceso: {e}")
+        await status_message.edit_text(
+            "<blockquote>⚠️ Ocurrió un error inesperado durante el proceso.</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
         
     finally:
         # Siempre reiniciar variables
@@ -1912,7 +1997,6 @@ async def finalize_load_upload(update, context):
                 f"La serie ya está disponible con el botón 'Ver ahora'.</blockquote>",
                 parse_mode=ParseMode.HTML
             )
-
         
 async def handle_series_seasons_only(update, context, series_id, query=None):
     """Manejar solo la visualización de temporadas (para botón volver)"""
@@ -1985,6 +2069,41 @@ async def handle_series_seasons_only(update, context, series_id, query=None):
             parse_mode=ParseMode.HTML
         )
 
+async def verify_episodes(context, series_id):
+    """Verificar que los episodios de una serie existen en el canal"""
+    try:
+        # Obtener todos los episodios de la serie
+        episodes = db.get_series_episodes(series_id)
+        valid_episodes = []
+        
+        for episode in episodes:
+            msg_id = episode.get('message_id')
+            try:
+                # Intentar obtener el mensaje
+                message = await context.bot.forward_message(
+                    chat_id=ADMIN_ID,  # Usar el ID del admin para verificación
+                    from_chat_id=SEARCH_CHANNEL_ID,
+                    message_id=msg_id,
+                    disable_notification=True
+                )
+                
+                # Si llega aquí, el mensaje existe
+                await context.bot.delete_message(
+                    chat_id=ADMIN_ID,
+                    message_id=message.message_id
+                )
+                
+                valid_episodes.append(episode)
+                
+            except Exception:
+                # El mensaje no existe, eliminar de la base de datos
+                db.remove_episode(series_id, episode.get('episode_number'))
+        
+        return valid_episodes
+    except Exception as e:
+        logger.error(f"Error verificando episodios: {e}")
+        return []
+
 async def send_episode_by_id(query, context, message_id):
     """Enviar un episodio específico por su message_id"""
     user_id = query.from_user.id
@@ -2000,7 +2119,32 @@ async def send_episode_by_id(query, context, message_id):
     )
     
     try:
-        # Enviar el capítulo directamente por message_id
+        # Verificar si el message_id existe en el canal de búsqueda
+        try:
+            # Intentar obtener el mensaje primero para verificar si existe
+            await context.bot.forward_message(
+                chat_id=user_id,  # Enviar a un chat temporal
+                from_chat_id=SEARCH_CHANNEL_ID,
+                message_id=message_id,
+                disable_notification=True
+            )
+            
+            # Si llegamos aquí, el mensaje existe, podemos borrarlo
+            await context.bot.delete_message(
+                chat_id=user_id,
+                message_id=context.bot.last_message.message_id
+            )
+        except Exception as e:
+            logger.error(f"Error verificando existencia del mensaje: {e}")
+            # El mensaje no existe o no se puede reenviar
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text=f"<blockquote>❌ Error al enviar el capítulo: Mensaje no encontrado ({message_id})</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+            return
+            
+        # Si todo está bien, enviar el capítulo
         await context.bot.copy_message(
             chat_id=query.message.chat_id,
             from_chat_id=SEARCH_CHANNEL_ID,
