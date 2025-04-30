@@ -59,6 +59,12 @@ SEARCH_CHANNEL_ID = -1002302159104
 # Add this at the top with other constants
 PLANS_INFO = PLANS
 
+# Constantes para el estado de /add
+ADD_STATE_IDLE = 0        # No hay proceso activo
+ADD_STATE_NAME = 1        # Esperando nombre después de /add
+ADD_STATE_RECEIVING = 2   # Recibiendo capítulos
+ADD_STATE_COVER = 3       # Esperando la portada
+
 # Constantes para el sistema de series
 UPSER_STATE_IDLE = 0        # No hay carga de serie en proceso
 UPSER_STATE_RECEIVING = 1   # Recibiendo capítulos
@@ -609,6 +615,499 @@ async def imdb_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         logger.error(f"Error en comando imdb: {e}")
         await processing_msg.edit_text(
             f"❌ Error al procesar la información de IMDb: {str(e)[:100]}",
+            parse_mode=ParseMode.HTML
+        )
+
+async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Comando para administradores para añadir contenido sin búsqueda en IMDb"""
+    # Verificar que el usuario es administrador
+    if not update.effective_user or update.effective_user.id != ADMIN_ID:
+        return
+    
+    # Obtener el estado actual
+    add_state = context.user_data.get('add_state', ADD_STATE_IDLE)
+    
+    # Si estamos en estado IDLE, iniciar el proceso pidiendo el nombre
+    if add_state == ADD_STATE_IDLE:
+        # Inicializar o reiniciar la estructura de datos
+        context.user_data['add_episodes'] = []
+        context.user_data['add_state'] = ADD_STATE_NAME
+        context.user_data['add_cover'] = None
+        context.user_data['add_description'] = None
+        context.user_data['add_title'] = None
+        context.user_data['add_series_pattern'] = None
+        
+        await update.message.reply_text(
+            "📺 <b>Modo de añadir contenido activado</b>\n\n"
+            "<blockquote>"
+            "1️⃣ Envía primero el nombre del contenido (ej: 'La que se avecina: Temporada 1')\n"
+            "2️⃣ Luego envía todos los capítulos en orden\n"
+            "3️⃣ El bot renombrará automáticamente los capítulos basándose en el primer nombre\n"
+            "4️⃣ Cuando termines de enviar los capítulos, envía una imagen con descripción\n"
+            "5️⃣ El bot procesará todo automáticamente\n"
+            "</blockquote>\n"
+            "Para cancelar el proceso, envía /canceladd",
+            parse_mode=ParseMode.HTML
+        )
+    
+    # Si estamos esperando capítulos y recibimos nuevamente /add, pasar al estado de espera de portada
+    elif add_state == ADD_STATE_RECEIVING:
+        episodes = context.user_data.get('add_episodes', [])
+        if not episodes:
+            await update.message.reply_text(
+                "<blockquote>⚠️ No has enviado ningún capítulo todavía.\n\n"
+                "Envía al menos un capítulo antes de continuar.</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+            return
+        
+        # Cambiar al estado de espera de portada
+        context.user_data['add_state'] = ADD_STATE_COVER
+        
+        await update.message.reply_text(
+            "<blockquote>✅ Capítulos recibidos.\n\n"
+            "Ahora envía una imagen para usar como portada con la descripción completa como pie de foto.</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+    
+    # Si estamos esperando la portada y ya la tenemos, finalizar
+    elif add_state == ADD_STATE_COVER and context.user_data.get('add_cover'):
+        await finalize_add_upload(update, context)
+    
+    # Cualquier otro estado (no debería ocurrir)
+    else:
+        await update.message.reply_text(
+            "<blockquote>❌ Error en el estado actual. Reinicia el proceso con /add.</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        context.user_data['add_state'] = ADD_STATE_IDLE
+
+async def cancel_add_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Cancelar el proceso de añadir contenido"""
+    # Verificar que el usuario es administrador
+    if not update.effective_user or update.effective_user.id != ADMIN_ID:
+        return
+    
+    # Reiniciar el estado
+    context.user_data['add_state'] = ADD_STATE_IDLE
+    context.user_data['add_episodes'] = []
+    context.user_data['add_cover'] = None
+    context.user_data['add_description'] = None
+    context.user_data['add_title'] = None
+    context.user_data['add_series_pattern'] = None
+    
+    await update.message.reply_text(
+        "<blockquote>❌ Proceso de añadir contenido cancelado.\n\n"
+        "Todos los datos temporales han sido eliminados.</blockquote>",
+        parse_mode=ParseMode.HTML
+    )
+
+async def handle_add_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manejar recepción del nombre del contenido en el proceso de /add"""
+    # Verificar que el usuario es administrador
+    if not update.effective_user or update.effective_user.id != ADMIN_ID:
+        return
+    
+    # Verificar si estamos esperando el nombre del contenido
+    add_state = context.user_data.get('add_state', ADD_STATE_IDLE)
+    if add_state != ADD_STATE_NAME:
+        return  # No estamos esperando el nombre
+    
+    # Obtener el nombre
+    content_name = update.message.text.strip()
+    
+    # Guardar el título
+    context.user_data['add_title'] = content_name
+    
+    # Detectar si el nombre tiene formato de serie (contiene "temporada", "season", etc.)
+    is_series = re.search(r'temporada|season|t\d+|s\d+', content_name.lower()) is not None
+    
+    # Extraer nombre base para usar como patrón en los capítulos
+    if is_series:
+        # Intentar extraer el nombre base de la serie sin la parte de temporada
+        base_match = re.search(r'(.+?)(?:\s*(?:temporada|season|t|s)\s*\d+)', content_name.lower())
+        if base_match:
+            base_name = base_match.group(1).strip()
+        else:
+            base_name = content_name
+            
+        # Intentar extraer el número de temporada
+        season_match = re.search(r'(?:temporada|season|t|s)\s*(\d+)', content_name.lower())
+        if season_match:
+            season_num = int(season_match.group(1))
+        else:
+            season_num = 1
+        
+        # Guardar el patrón para los capítulos
+        context.user_data['add_series_pattern'] = {
+            'base_name': base_name,
+            'season_num': season_num,
+            'current_episode': 0,
+            'is_series': True
+        }
+        
+        await update.message.reply_text(
+            f"<blockquote>✅ Nombre de serie registrado: <b>{content_name}</b>\n"
+            f"Nombre base detectado: <b>{base_name}</b>\n"
+            f"Temporada detectada: {season_num}\n\n"
+            f"Los capítulos que envíes serán renombrados automáticamente siguiendo este patrón.\n"
+            f"Ahora envía los capítulos en orden.</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+    else:
+        # Es una película u otro contenido
+        context.user_data['add_series_pattern'] = {
+            'base_name': content_name,
+            'is_series': False
+        }
+        
+        await update.message.reply_text(
+            f"<blockquote>✅ Nombre de contenido registrado: <b>{content_name}</b>\n\n"
+            f"Ahora envía el archivo de la película o contenido.</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+    
+    # Cambiar al estado de recibir capítulos/archivos
+    context.user_data['add_state'] = ADD_STATE_RECEIVING
+
+async def handle_add_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manejar la recepción de capítulos durante el proceso de /add"""
+    # Verificar que el usuario es administrador
+    if not update.effective_user or update.effective_user.id != ADMIN_ID:
+        return
+    
+    # Verificar si estamos en modo de añadir contenido
+    add_state = context.user_data.get('add_state', ADD_STATE_IDLE)
+    
+    # Si recibimos un mensaje con foto y estamos en modo de espera de portada, es la portada
+    if update.message.photo and add_state == ADD_STATE_COVER:
+        # Guardar la portada y descripción
+        context.user_data['add_cover'] = update.message.photo[-1].file_id
+        context.user_data['add_description'] = update.message.caption or ""
+        
+        # Finalizar automáticamente el proceso
+        await update.message.reply_text(
+            "<blockquote>✅ Portada recibida correctamente.\n"
+            "Procesando la subida del contenido...</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        
+        # Procesar la subida
+        await finalize_add_upload(update, context)
+        return
+    
+    # Si estamos en modo de recepción y recibimos un video/documento, es un capítulo
+    if (update.message.video or update.message.document) and add_state == ADD_STATE_RECEIVING:
+        # Obtener información del capítulo
+        message_id = update.message.message_id
+        chat_id = update.effective_chat.id
+        original_caption = update.message.caption or ""
+        file_name = update.message.document.file_name if update.message.document else None
+        
+        # Obtener el patrón de serie
+        series_pattern = context.user_data.get('add_series_pattern', {})
+        
+        # Por defecto, usar el caption original
+        caption = original_caption
+        
+        # Si es una serie, renombrar los capítulos
+        if series_pattern.get('is_series', False):
+            base_name = series_pattern['base_name']
+            season_num = series_pattern['season_num']
+            
+            # Incrementar el número de episodio
+            episode_num = series_pattern['current_episode'] + 1
+            series_pattern['current_episode'] = episode_num
+            
+            # Crear nuevo caption
+            new_caption = f"{base_name} {season_num:02d}x{episode_num:02d}"
+            
+            # Verificar si necesitamos actualizar el caption
+            if base_name.lower() not in original_caption.lower():
+                try:
+                    # Obtener el file_id del archivo actual
+                    if update.message.video:
+                        file_id = update.message.video.file_id
+                        # Borrar el mensaje original
+                        await context.bot.delete_message(
+                            chat_id=chat_id, 
+                            message_id=message_id
+                        )
+                        # Enviar un nuevo mensaje con el caption correcto
+                        new_message = await context.bot.send_video(
+                            chat_id=chat_id,
+                            video=file_id,
+                            caption=new_caption
+                        )
+                        # Actualizar el message_id para guardarlo correctamente
+                        message_id = new_message.message_id
+                    elif update.message.document:
+                        file_id = update.message.document.file_id
+                        # Borrar el mensaje original
+                        await context.bot.delete_message(
+                            chat_id=chat_id, 
+                            message_id=message_id
+                        )
+                        # Enviar un nuevo mensaje con el caption correcto
+                        new_message = await context.bot.send_document(
+                            chat_id=chat_id,
+                            document=file_id,
+                            caption=new_caption
+                        )
+                        # Actualizar el message_id para guardarlo correctamente
+                        message_id = new_message.message_id
+                    
+                    # Notificar el cambio de nombre
+                    await context.bot.send_message(
+                        chat_id=chat_id,
+                        text=f"<blockquote>✅ Nombre actualizado: <b>{new_caption}</b></blockquote>",
+                        parse_mode=ParseMode.HTML
+                    )
+                    
+                    # Usar el nuevo caption
+                    caption = new_caption
+                except Exception as e:
+                    logger.error(f"Error al reenviar con nuevo caption: {e}")
+                    caption = original_caption
+            else:
+                caption = original_caption
+            
+            # Guardar con el número de episodio
+            episode_data = {
+                'message_id': message_id,
+                'episode_number': episode_num,
+                'chat_id': chat_id,
+                'caption': caption,
+                'file_name': file_name
+            }
+        else:
+            # Para contenido que no es serie
+            episode_data = {
+                'message_id': message_id,
+                'episode_number': 1,  # Solo hay un "episodio" para películas
+                'chat_id': chat_id,
+                'caption': caption,
+                'file_name': file_name
+            }
+        
+        # Añadir a la lista de episodios
+        context.user_data.setdefault('add_episodes', []).append(episode_data)
+        
+        # Mensaje de confirmación
+        if series_pattern.get('is_series', False):
+            await update.message.reply_text(
+                f"<blockquote>✅ Capítulo {episode_data['episode_number']} recibido y guardado.</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+        else:
+            await update.message.reply_text(
+                f"<blockquote>✅ Archivo recibido y guardado.</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+            
+            # Si es una película u otro contenido individual, pasar automáticamente al siguiente paso
+            if len(context.user_data.get('add_episodes', [])) == 1:
+                context.user_data['add_state'] = ADD_STATE_COVER
+                await update.message.reply_text(
+                    "<blockquote>Ahora envía una imagen para usar como portada con la descripción como pie de foto.</blockquote>",
+                    parse_mode=ParseMode.HTML
+                )
+
+async def finalize_add_upload(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Finalizar el proceso y subir el contenido a los canales"""
+    # Obtener los datos necesarios
+    episodes = context.user_data.get('add_episodes', [])
+    cover_photo = context.user_data.get('add_cover')
+    description = context.user_data.get('add_description', "")
+    title = context.user_data.get('add_title', "")
+    series_pattern = context.user_data.get('add_series_pattern', {})
+    
+    # Verificar que tenemos todos los datos necesarios
+    if not episodes or not cover_photo:
+        await update.message.reply_text(
+            "<blockquote>❌ No hay suficientes datos para subir el contenido.\n\n"
+            "Debes enviar al menos un archivo y una imagen de portada.</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        return
+    
+    # Crear un mensaje de estado para seguir el progreso
+    status_message = await update.message.reply_text(
+        "<blockquote>⏳ Procesando y subiendo el contenido a los canales...</blockquote>",
+        parse_mode=ParseMode.HTML
+    )
+    
+    try:
+        # Determinar si es una serie o película
+        is_series = series_pattern.get('is_series', False)
+        
+        # 1. Crear un identificador único
+        content_id = int(time.time())
+        
+        # 2. Crear la estructura del mensaje basada en la descripción proporcionada
+        if not description:
+            description = f"<b>{title}</b>"
+        elif "<b>" not in description and title:
+            description = f"<b>{title}</b>\n\n{description}"
+        
+        # 3. Subir la portada con descripción al canal de búsqueda
+        await status_message.edit_text(
+            "<blockquote>⏳ Subiendo portada al canal de búsqueda...</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        
+        sent_cover = await context.bot.send_photo(
+            chat_id=SEARCH_CHANNEL_ID,
+            photo=cover_photo,
+            caption=description,
+            parse_mode=ParseMode.HTML
+        )
+        
+        search_channel_cover_id = sent_cover.message_id
+        
+        # 4. Subir todos los episodios al canal de búsqueda
+        await status_message.edit_text(
+            f"<blockquote>⏳ Subiendo {len(episodes)} archivo(s) al canal de búsqueda...</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        
+        search_channel_episode_ids = []
+        
+        # Procesar los episodios en grupos para evitar timeouts
+        episode_groups = [episodes[i:i+5] for i in range(0, len(episodes), 5)]
+        
+        for group_index, group in enumerate(episode_groups):
+            # Actualizar estado
+            await status_message.edit_text(
+                f"<blockquote>⏳ Subiendo archivos al canal de búsqueda... ({group_index*5+1}-{min((group_index+1)*5, len(episodes))}/{len(episodes)})</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+            
+            for episode in group:
+                try:
+                    original_message = await context.bot.copy_message(
+                        chat_id=SEARCH_CHANNEL_ID,
+                        from_chat_id=episode['chat_id'],
+                        message_id=episode['message_id'],
+                        disable_notification=True
+                    )
+                    
+                    search_channel_episode_ids.append(original_message.message_id)
+                    
+                    # Pequeña pausa para evitar rate limiting
+                    await asyncio.sleep(0.5)
+                except Exception as e:
+                    logger.error(f"Error copiando episodio al canal de búsqueda: {e}")
+                    await status_message.edit_text(
+                        f"<blockquote>⚠️ Error al subir el archivo {group_index*5 + len(search_channel_episode_ids) + 1}. Continuando con el siguiente...</blockquote>",
+                        parse_mode=ParseMode.HTML
+                    )
+                    await asyncio.sleep(1)
+        
+        # 5. Generar URL para el botón "Ver ahora"
+        if is_series:
+            view_url = f"https://t.me/MultimediaTVbot?start=series_{content_id}"
+        else:
+            # Si es película, usar el ID del primer mensaje
+            view_url = f"https://t.me/MultimediaTVbot?start=content_{search_channel_episode_ids[0]}"
+        
+        # 6. Crear botón para la portada
+        keyboard = [
+            [InlineKeyboardButton("Ver ahora", url=view_url)]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # 7. Actualizar la portada con el botón
+        await context.bot.edit_message_reply_markup(
+            chat_id=SEARCH_CHANNEL_ID,
+            message_id=search_channel_cover_id,
+            reply_markup=reply_markup
+        )
+        
+        # 8. Subir portada al canal principal
+        await status_message.edit_text(
+            "<blockquote>⏳ Subiendo portada al canal principal...</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        
+        try:
+            sent_cover_main = await context.bot.send_photo(
+                chat_id=CHANNEL_ID,
+                photo=cover_photo,
+                caption=description,
+                parse_mode=ParseMode.HTML
+            )
+            
+            # 9. Actualizar la portada en el canal principal con el botón
+            await context.bot.edit_message_reply_markup(
+                chat_id=CHANNEL_ID,
+                message_id=sent_cover_main.message_id,
+                reply_markup=reply_markup
+            )
+        except Exception as e:
+            logger.error(f"Error enviando portada al canal principal: {e}")
+            await status_message.edit_text(
+                f"<blockquote>⚠️ Error al enviar portada al canal principal, pero el contenido ya está en el canal de búsqueda.</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+        
+        # 10. Si es una serie, guardar en la base de datos
+        if is_series:
+            await status_message.edit_text(
+                "<blockquote>⏳ Guardando información en la base de datos...</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+            
+            try:
+                # Guardar la serie
+                db.add_series(
+                    series_id=content_id,
+                    title=title,
+                    description=description,
+                    cover_message_id=search_channel_cover_id,
+                    added_by=update.effective_user.id
+                )
+                
+                # Guardar cada episodio
+                for i, (episode, msg_id) in enumerate(zip(episodes, search_channel_episode_ids)):
+                    episode_num = episode.get('episode_number', i + 1)
+                    db.add_episode(
+                        series_id=content_id,
+                        episode_number=episode_num,
+                        message_id=msg_id
+                    )
+            except Exception as db_error:
+                logger.error(f"Error guardando en la base de datos: {db_error}")
+                await status_message.edit_text(
+                    f"<blockquote>⚠️ El contenido se subió a los canales pero hubo un error al guardarlo en la base de datos: {str(db_error)[:100]}</blockquote>",
+                    parse_mode=ParseMode.HTML
+                )
+        
+        # 11. Reiniciar el estado
+        context.user_data['add_state'] = ADD_STATE_IDLE
+        context.user_data['add_episodes'] = []
+        context.user_data['add_cover'] = None
+        context.user_data['add_description'] = None
+        context.user_data['add_title'] = None
+        context.user_data['add_series_pattern'] = None
+        
+        # 12. Informar éxito
+        content_type = "Serie" if is_series else "Película"
+        await status_message.edit_text(
+            f"<blockquote>✅ <b>{title}</b> subido correctamente\n\n"
+            f"📊 Detalles:\n"
+            f"- Tipo: {content_type}\n"
+            f"- Archivos: {len(episodes)}\n"
+            f"- Subido a canal principal: ✓\n"
+            f"- Subido a canal de búsqueda: ✓\n\n"
+            f"El contenido ya está disponible con el botón 'Ver ahora'.</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+    
+    except Exception as e:
+        logger.error(f"Error en finalize_add_upload: {e}")
+        await status_message.edit_text(
+            f"<blockquote>❌ Error al procesar la subida: {str(e)[:100]}</blockquote>",
             parse_mode=ParseMode.HTML
         )
 
@@ -4121,6 +4620,8 @@ def main() -> None:
     application.add_handler(CommandHandler("load", load_command))
     application.add_handler(CommandHandler("upser", upser_command))
     application.add_handler(CommandHandler("cancelupser", cancel_upser_command))
+    application.add_handler(CommandHandler("add", add_command))
+    application.add_handler(CommandHandler("canceladd", cancel_add_command))
     application.add_handler(CommandHandler("addgift_code", add_gift_code))
     application.add_handler(CommandHandler("gift_code", redeem_gift_code))
     application.add_handler(CommandHandler("ban", ban_user))
