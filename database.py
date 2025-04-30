@@ -32,6 +32,7 @@ class Database:
             self.episodes = self.db['episodes']
             self.gift_codes = self.db['gift_codes']
             self.stats = self.db['stats']
+            self.seasons = self.db['seasons']  # Agregada la colección seasons
             
             # Crear índices para mejorar el rendimiento
             self._create_indexes()
@@ -60,6 +61,11 @@ class Database:
             
             # Índices para códigos de regalo
             self.gift_codes.create_index("code", unique=True)
+            
+            # Índices para temporadas
+            self.seasons.create_index([("series_id", pymongo.ASCENDING),
+                                        ("season_number", pymongo.ASCENDING)],
+                                        unique=True)
             
             logger.info("Índices de MongoDB creados correctamente")
         except Exception as e:
@@ -566,3 +572,65 @@ class Database:
         except Exception as e:
             logger.error(f"Error al obtener episodios de serie: {e}")
             return []
+    
+    # Nuevas funciones añadidas
+    def add_season(self, series_id, season_number, title=None):
+        """Añade una nueva temporada a una serie"""
+        try:
+            season_data = {
+                "series_id": series_id,
+                "season_number": season_number,
+                "title": title or f"Temporada {season_number}"
+            }
+            
+            result = self.db.seasons.insert_one(season_data)
+            return result.inserted_id
+        except Exception as e:
+            logger.error(f"Error añadiendo temporada: {e}")
+            return None
+    
+    def get_series_seasons(self, series_id):
+        """Obtiene todas las temporadas de una serie"""
+        try:
+            seasons = list(self.db.seasons.find({"series_id": series_id}).sort("season_number", 1))
+            return seasons
+        except Exception as e:
+            logger.error(f"Error obteniendo temporadas: {e}")
+            return []
+    
+    def get_season_episodes(self, series_id, season_number):
+        """Obtiene todos los episodios de una temporada específica"""
+        try:
+            episodes = list(self.db.episodes.find({
+                "series_id": series_id,
+                "season_number": season_number
+            }).sort("episode_number", 1))
+            return episodes
+        except Exception as e:
+            logger.error(f"Error obteniendo episodios de temporada: {e}")
+            return []
+    
+    def add_episode_with_season(self, series_id, season_number, episode_number, message_id):
+        """Añade un episodio con información de temporada"""
+        try:
+            episode = {
+                "series_id": series_id,
+                "season_number": season_number,
+                "episode_number": episode_number,
+                "message_id": message_id
+            }
+            
+            self.db.episodes.update_one(
+                {
+                    "series_id": series_id,
+                    "season_number": season_number,
+                    "episode_number": episode_number
+                },
+                {"$set": episode},
+                upsert=True
+            )
+            
+            return True
+        except Exception as e:
+            logger.error(f"Error añadiendo episodio con temporada: {e}")
+            return False
