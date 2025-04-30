@@ -4643,6 +4643,16 @@ def main() -> None:
     
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
+        handle_add_name,
+    ), group=-11)
+    
+    application.add_handler(MessageHandler(
+        (filters.PHOTO | filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
+        handle_add_content,
+    ), group=-11)
+    
+    application.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
         handle_content_name,
     ), group=-10)  # Alta prioridad
 
@@ -4661,7 +4671,7 @@ def main() -> None:
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND, 
         handle_search
-	), group=1)  # Menor prioridad
+    ), group=1)  # Menor prioridad
     
     # Schedule periodic tasks - Solución alternativa
     # En lugar de run_daily, usamos run_repeating con un intervalo de 24h
