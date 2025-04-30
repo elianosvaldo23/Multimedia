@@ -288,8 +288,8 @@ async def handle_series_request(update: Update, context: ContextTypes.DEFAULT_TY
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await update.message.reply_text(
-            "❌ Has alcanzado tu límite de búsquedas diarias.\n\n"
-            "<blockquote>Para continuar viendo series, adquiere un plan premium:</blockquote>",
+            "<blockquote>❌ Has alcanzado tu límite de búsquedas diarias.\n\n"
+            "Para continuar viendo series, adquiere un plan premium:</blockquote>",
             reply_markup=reply_markup,
             parse_mode=ParseMode.HTML
         )
@@ -306,73 +306,227 @@ async def handle_series_request(update: Update, context: ContextTypes.DEFAULT_TY
     
     if not series:
         await update.message.reply_text(
-            "❌ Serie no encontrada. Es posible que haya sido eliminada o que el enlace sea incorrecto.",
+            "<blockquote>❌ Serie no encontrada. Es posible que haya sido eliminada o que el enlace sea incorrecto.</blockquote>",
             parse_mode=ParseMode.HTML
         )
         return
     
-    # Obtener capítulos
-    episodes = db.get_series_episodes(series_id)
+    # Obtener temporadas (si se implementó el sistema de temporadas)
+    try:
+        seasons = db.get_series_seasons(series_id)
+    except Exception:
+        # Si no se implementó, obtener todos los episodios
+        seasons = []
     
-    if not episodes:
-        await update.message.reply_text(
-            "❌ Esta serie no tiene capítulos disponibles actualmente.",
-            parse_mode=ParseMode.HTML
-        )
-        return
-    
-    # Obtener portada
-    cover_message_id = series['cover_message_id']
+    # Si no hay temporadas en la base de datos, mostrar todos los episodios
+    if not seasons:
+        # Comportamiento anterior - obtener todos los episodios
+        episodes = db.get_series_episodes(series_id)
+        
+        if not episodes:
+            await update.message.reply_text(
+                "<blockquote>❌ Esta serie no tiene capítulos disponibles actualmente.</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+            return
+        
+        # Obtener portada
+        cover_message_id = series['cover_message_id']
+        
+        try:
+            # Enviar portada
+            await context.bot.copy_message(
+                chat_id=update.effective_chat.id,
+                from_chat_id=SEARCH_CHANNEL_ID,
+                message_id=cover_message_id
+            )
+            
+            # Crear botones para los capítulos
+            keyboard = []
+            
+            # Añadir un botón para cada capítulo, organizados en filas de 3
+            for i in range(0, len(episodes), 3):
+                row = []
+                for j in range(i, min(i + 3, len(episodes))):
+                    episode = episodes[j]
+                    row.append(
+                        InlineKeyboardButton(
+                            f"Capítulo {episode['episode_number']}",
+                            callback_data=f"ep_{series_id}_{episode['episode_number']}"
+                        )
+                    )
+                keyboard.append(row)
+            
+            # Añadir botón para enviar todos los capítulos
+            keyboard.append([
+                InlineKeyboardButton(
+                    "Enviar todos los capítulos",
+                    callback_data=f"ep_all_{series_id}"
+                )
+            ])
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            # Enviar mensaje con botones
+            await update.message.reply_text(
+                f"📺 <b>{series['title']}</b>\n\n"
+                f"<blockquote>Selecciona un capítulo para ver o solicita todos los capítulos:</blockquote>",
+                reply_markup=reply_markup,
+                parse_mode=ParseMode.HTML
+            )
+        except Exception as e:
+            logger.error(f"Error enviando datos de serie: {e}")
+            await update.message.reply_text(
+                f"<blockquote>❌ Error al mostrar la serie: {str(e)[:100]}\n\n"
+                f"Por favor, intenta más tarde.</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+    else:
+        # Nuevo comportamiento - mostrar botones de temporadas
+        # Obtener portada
+        cover_message_id = series['cover_message_id']
+        
+        try:
+            # Enviar portada
+            await context.bot.copy_message(
+                chat_id=update.effective_chat.id,
+                from_chat_id=SEARCH_CHANNEL_ID,
+                message_id=cover_message_id
+            )
+            
+            # Crear botones para las temporadas
+            keyboard = []
+            
+            # Añadir un botón para cada temporada
+            for season in seasons:
+                season_number = season['season_number']
+                season_title = season.get('title', f"Temporada {season_number}")
+                
+                keyboard.append([
+                    InlineKeyboardButton(
+                        f"{season_title}",
+                        callback_data=f"season_{series_id}_{season_number}"
+                    )
+                ])
+            
+            # Añadir botón para volver (si se necesita)
+            # keyboard.append([
+            #    InlineKeyboardButton("Volver 🔙", callback_data="main_menu")
+            # ])
+            
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            # Enviar mensaje con botones
+            await update.message.reply_text(
+                f"📺 <b>{series['title']}</b>\n\n"
+                f"<blockquote>Selecciona una temporada:</blockquote>",
+                reply_markup=reply_markup,
+                parse_mode=ParseMode.HTML
+            )
+        except Exception as e:
+            logger.error(f"Error enviando datos de serie: {e}")
+            await update.message.reply_text(
+                f"<blockquote>❌ Error al mostrar la serie: {str(e)[:100]}\n\n"
+                f"Por favor, intenta más tarde.</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+            
+async def handle_season_callback(query, context, series_id, season_number):
+    """Manejar la selección de temporada y mostrar sus episodios"""
     
     try:
-        # Enviar portada
-        await context.bot.copy_message(
-            chat_id=update.effective_chat.id,
-            from_chat_id=SEARCH_CHANNEL_ID,
-            message_id=cover_message_id
-        )
+        # Obtener información de la serie
+        series = db.get_series(series_id)
+        if not series:
+            await query.answer("Serie no encontrada")
+            return
+            
+        # Convertir a enteros
+        series_id = int(series_id)
+        season_number = int(season_number)
         
-        # Crear botones para los capítulos
+        # Obtener episodios de la temporada
+        try:
+            episodes = db.get_season_episodes(series_id, season_number)
+        except Exception:
+            # Si la función específica de temporadas no está disponible
+            # intentamos recuperar todos los episodios y filtrar
+            all_episodes = db.get_series_episodes(series_id)
+            
+            # Filtrar los episodios de esta temporada
+            # Esto es una aproximación - asumiendo que agrupamos por cientos (101, 102 = T1)
+            if all_episodes:
+                # Esta es una aproximación simple - puede ser necesario ajustarla
+                # según tu esquema actual de numeración de episodios
+                episodes = []
+                for ep in all_episodes:
+                    # Aproximación: episodios 1-99 son T1, 100-199 son T2, etc.
+                    ep_num = ep['episode_number']
+                    if (season_number-1)*100 < ep_num <= season_number*100:
+                        episodes.append(ep)
+        
+        if not episodes:
+            await query.answer("No hay episodios disponibles para esta temporada")
+            await query.edit_message_text(
+                f"<blockquote>⚠️ No se encontraron episodios para la Temporada {season_number}</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+            return
+        
+        # Crear botones para los episodios
         keyboard = []
         
-        # Añadir un botón para cada capítulo, organizados en filas de 3
+        # Añadir un botón para cada episodio, organizados en filas de 3
         for i in range(0, len(episodes), 3):
             row = []
             for j in range(i, min(i + 3, len(episodes))):
                 episode = episodes[j]
+                ep_num = episode.get('episode_number', j+1)
                 row.append(
                     InlineKeyboardButton(
-                        f"Capítulo {episode['episode_number']}",
-                        callback_data=f"ep_{series_id}_{episode['episode_number']}"
+                        f"Capítulo {ep_num}",
+                        callback_data=f"ep_{series_id}_{episode['message_id']}_direct"
                     )
                 )
             keyboard.append(row)
         
-        # Añadir botón para enviar todos los capítulos
+        # Añadir botón para enviar todos los episodios de esta temporada
         keyboard.append([
             InlineKeyboardButton(
                 "Enviar todos los capítulos",
-                callback_data=f"ep_all_{series_id}"
+                callback_data=f"season_all_{series_id}_{season_number}"
+            )
+        ])
+        
+        # Añadir botón para volver a la lista de temporadas
+        keyboard.append([
+            InlineKeyboardButton(
+                "Volver a temporadas 🔙",
+                callback_data=f"series_{series_id}"
             )
         ])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        # Enviar mensaje con botones
-        await update.message.reply_text(
-            f"📺 <b>{series['title']}</b>\n\n"
-            f"Selecciona un capítulo para ver o solicita todos los capítulos:",
+        # Actualizar mensaje con los episodios de la temporada
+        season_title = f"Temporada {season_number}"
+        try:
+            season_data = next((s for s in db.get_series_seasons(series_id) if s['season_number'] == season_number), None)
+            if season_data and 'title' in season_data:
+                season_title = season_data['title']
+        except Exception:
+            pass
+        
+        await query.edit_message_text(
+            f"📺 <b>{series['title']}</b> - <b>{season_title}</b>\n\n"
+            f"<blockquote>Selecciona un capítulo:</blockquote>",
             reply_markup=reply_markup,
             parse_mode=ParseMode.HTML
         )
-        
+    
     except Exception as e:
-        logger.error(f"Error enviando datos de serie: {e}")
-        await update.message.reply_text(
-            f"❌ Error al mostrar la serie: {str(e)[:100]}\n\n"
-            f"Por favor, intenta más tarde.",
-            parse_mode=ParseMode.HTML
-        )
+        logger.error(f"Error mostrando temporada: {e}")
+        await query.answer(f"Error: {str(e)[:50]}")
 
 async def send_episode(query, context, series_id, episode_number):
     """Enviar un capítulo específico al usuario"""
@@ -621,8 +775,12 @@ async def imdb_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Comando para administradores para añadir contenido sin búsqueda en IMDb"""
+    # Verificar que update y message no sean None
+    if not update or not update.message:
+        return
+    
     # Verificar que el usuario es administrador
-    if not update.effective_user or update.effective_user.id != ADMIN_ID:
+    if update.effective_user.id != ADMIN_ID:
         return
     
     # Obtener el estado actual
@@ -685,8 +843,12 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 async def cancel_add_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Cancelar el proceso de añadir contenido"""
+    # Verificar que update y message no sean None
+    if not update or not update.message:
+        return
+    
     # Verificar que el usuario es administrador
-    if not update.effective_user or update.effective_user.id != ADMIN_ID:
+    if update.effective_user.id != ADMIN_ID:
         return
     
     # Reiniciar el estado
@@ -705,8 +867,12 @@ async def cancel_add_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def handle_add_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manejar recepción del nombre del contenido en el proceso de /add"""
+    # Verificar que update y message no sean None
+    if not update or not update.message:
+        return
+    
     # Verificar que el usuario es administrador
-    if not update.effective_user or update.effective_user.id != ADMIN_ID:
+    if update.effective_user.id != ADMIN_ID:
         return
     
     # Verificar si estamos esperando el nombre del contenido
@@ -773,8 +939,12 @@ async def handle_add_name(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
 async def handle_add_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manejar la recepción de capítulos durante el proceso de /add"""
+    # Verificar que update y message no sean None
+    if not update or not update.message:
+        return
+    
     # Verificar que el usuario es administrador
-    if not update.effective_user or update.effective_user.id != ADMIN_ID:
+    if update.effective_user.id != ADMIN_ID:
         return
     
     # Verificar si estamos en modo de añadir contenido
@@ -1114,8 +1284,12 @@ async def finalize_add_upload(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def load_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Comando para iniciar/finalizar la carga masiva de contenido"""
+    # Verificar que update y message no sean None
+    if not update or not update.message:
+        return
+    
     # Verificar que el usuario es administrador
-    if not update.effective_user or update.effective_user.id != ADMIN_ID:
+    if update.effective_user.id != ADMIN_ID:
         return
     
     # Obtener el estado actual de carga
@@ -1226,8 +1400,12 @@ async def load_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 async def cancel_load_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Cancelar el proceso de carga masiva"""
+    # Verificar que update y message no sean None
+    if not update or not update.message:
+        return
+    
     # Verificar que el usuario es administrador
-    if not update.effective_user or update.effective_user.id != ADMIN_ID:
+    if update.effective_user.id != ADMIN_ID:
         return
     
     # Reiniciar variables
@@ -1246,8 +1424,12 @@ async def cancel_load_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def handle_load_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manejar el nombre de temporada en modo carga masiva"""
+    # Verificar que update y message no sean None
+    if not update or not update.message:
+        return
+    
     # Verificar que el usuario es administrador
-    if not update.effective_user or update.effective_user.id != ADMIN_ID:
+    if update.effective_user.id != ADMIN_ID:
         return
     
     # Verificar si estamos esperando nombre de temporada
@@ -1315,8 +1497,12 @@ async def handle_load_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 async def handle_load_files(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manejar archivos en modo carga masiva"""
+    # Verificar que update y message no sean None
+    if not update or not update.message:
+        return
+    
     # Verificar que el usuario es administrador
-    if not update.effective_user or update.effective_user.id != ADMIN_ID:
+    if update.effective_user.id != ADMIN_ID:
         return
     
     # Verificar si estamos esperando archivos
@@ -1417,8 +1603,12 @@ async def handle_load_files(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 async def handle_load_cover(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manejar la recepción de la portada"""
+    # Verificar que update y message no sean None
+    if not update or not update.message:
+        return
+    
     # Verificar que el usuario es administrador
-    if not update.effective_user or update.effective_user.id != ADMIN_ID:
+    if update.effective_user.id != ADMIN_ID:
         return
     
     # Verificar si estamos esperando portada
@@ -1645,7 +1835,7 @@ async def finalize_load_upload(update, context):
             "<blockquote>⏳ Guardando datos en la base de datos...</blockquote>",
             parse_mode=ParseMode.HTML
         )
-        
+
         try:
             # Guardar la serie
             db.add_series(
@@ -1656,24 +1846,37 @@ async def finalize_load_upload(update, context):
                 added_by=update.effective_user.id
             )
             
-            # Guardar cada episodio - SIN incluir el parámetro 'season'
-            for episode_info in all_episode_ids:
-                # Calcular el número de episodio absoluto para manejar múltiples temporadas
-                # Por ejemplo: T1E1=1, T1E2=2, T2E1=3, T2E2=4, etc.
-                season = episode_info['season']
-                episode_in_season = episode_info['episode']
+            # Guardar cada temporada y sus episodios
+            for season_index, season in enumerate(seasons):
+                season_number = season_index + 1
+                season_title = season.get('title', f"Temporada {season_number}")
                 
-                # Opción 1: usar episodio dentro de cada temporada - solo si tu app gestiona temporadas separadamente
-                episode_number = episode_in_season
+                # Añadir la temporada a la base de datos
+                try:
+                    db.add_season(series_id, season_number, season_title)
+                except Exception as season_error:
+                    logger.warning(f"Error guardando temporada {season_number}: {season_error}")
                 
-                # Opción 2: calcular número absoluto - si tu app no considera temporadas
-                # episode_number = ((season - 1) * 100) + episode_in_season  # Numeración T1E1=1, T1E2=2, T2E1=201, T2E2=202
-                
-                db.add_episode(
-                    series_id=series_id,
-                    episode_number=episode_number,
-                    message_id=episode_info['message_id']
-                )
+                # Guardar episodios de esta temporada
+                for episode in season.get('episodes', []):
+                    episode_number = episode.get('episode_number', 1)
+                    message_id = episode.get('message_id')
+                    
+                    # Si existe add_episode_with_season
+                    try:
+                        db.add_episode_with_season(
+                            series_id=series_id,
+                            season_number=season_number,
+                            episode_number=episode_number,
+                            message_id=message_id
+                        )
+                    except Exception:
+                        # Caer en el método original si el nuevo método falla
+                        db.add_episode(
+                            series_id=series_id,
+                            episode_number=episode_number,
+                            message_id=message_id
+                        )
         except Exception as db_error:
             logger.error(f"Error guardando en base de datos: {db_error}")
             await status_message.edit_text(
@@ -1683,6 +1886,15 @@ async def finalize_load_upload(update, context):
             )
             return
         
+    except Exception as e:
+        logger.error(f"Error en finalize_load_upload: {e}")
+        await status_message.edit_text(
+            f"<blockquote>❌ Error procesando el contenido: {str(e)[:100]}\n"
+            f"Intenta nuevamente.</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+
+    finally:
         # 4. Reiniciar variables
         context.user_data['load_state'] = LOAD_STATE_INACTIVE
         context.user_data['load_seasons'] = []
@@ -1704,13 +1916,229 @@ async def finalize_load_upload(update, context):
             parse_mode=ParseMode.HTML
         )
         
-    except Exception as e:
-        logger.error(f"Error en finalize_load_upload: {e}")
-        await status_message.edit_text(
-            f"<blockquote>❌ Error procesando el contenido: {str(e)[:100]}\n"
-            f"Intenta nuevamente.</blockquote>",
+async def handle_series_seasons_only(update, context, series_id, query=None):
+    """Manejar solo la visualización de temporadas (para botón volver)"""
+    # Obtener datos de la serie
+    series = db.get_series(series_id)
+    
+    if not series:
+        if query:
+            await query.answer("Serie no encontrada")
+        else:
+            await update.message.reply_text(
+                "<blockquote>❌ Serie no encontrada.</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+        return
+    
+    # Obtener temporadas
+    try:
+        seasons = db.get_series_seasons(series_id)
+    except Exception:
+        seasons = []
+    
+    if not seasons:
+        # Si no hay temporadas, mostrar todos los episodios
+        if query:
+            await query.edit_message_text(
+                "<blockquote>⚠️ No se encontraron temporadas para esta serie.</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+        else:
+            await update.message.reply_text(
+                "<blockquote>⚠️ No se encontraron temporadas para esta serie.</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+        return
+    
+    # Crear botones para las temporadas
+    keyboard = []
+    
+    # Añadir un botón para cada temporada
+    for season in seasons:
+        season_number = season['season_number']
+        season_title = season.get('title', f"Temporada {season_number}")
+        
+        keyboard.append([
+            InlineKeyboardButton(
+                f"{season_title}",
+                callback_data=f"season_{series_id}_{season_number}"
+            )
+        ])
+    
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    # Enviar o actualizar mensaje
+    message_text = (
+        f"📺 <b>{series['title']}</b>\n\n"
+        f"<blockquote>Selecciona una temporada:</blockquote>"
+    )
+    
+    if query:
+        await query.edit_message_text(
+            message_text,
+            reply_markup=reply_markup,
             parse_mode=ParseMode.HTML
         )
+    else:
+        await update.message.reply_text(
+            message_text,
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.HTML
+        )
+
+async def send_episode_by_id(query, context, message_id):
+    """Enviar un episodio específico por su message_id"""
+    user_id = query.from_user.id
+    user_data = db.get_user(user_id)
+    can_forward = user_data and user_data.get('can_forward', False)
+    
+    await query.answer("Procesando tu solicitud...")
+    
+    # Mostrar acción de escribiendo
+    await context.bot.send_chat_action(
+        chat_id=query.message.chat_id,
+        action=ChatAction.TYPING
+    )
+    
+    try:
+        # Enviar el capítulo directamente por message_id
+        await context.bot.copy_message(
+            chat_id=query.message.chat_id,
+            from_chat_id=SEARCH_CHANNEL_ID,
+            message_id=message_id,
+            protect_content=not can_forward  # Proteger según el plan
+        )
+        
+        # Marcar el botón como seleccionado
+        keyboard = query.message.reply_markup.inline_keyboard
+        new_keyboard = []
+        
+        for row in keyboard:
+            new_row = []
+            for button in row:
+                if button.callback_data == query.data:
+                    # Marcar este botón como seleccionado
+                    new_row.append(InlineKeyboardButton(
+                        f"✅ {button.text}",
+                        callback_data=button.callback_data
+                    ))
+                else:
+                    new_row.append(button)
+            new_keyboard.append(new_row)
+        
+        # Actualizar el mensaje con el nuevo teclado
+        await query.edit_message_reply_markup(
+            reply_markup=InlineKeyboardMarkup(new_keyboard)
+        )
+        
+    except Exception as e:
+        logger.error(f"Error enviando capítulo: {e}")
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=f"<blockquote>❌ Error al enviar el capítulo: {str(e)[:100]}</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+
+async def send_all_season_episodes(query, context, series_id, season_number):
+    """Enviar todos los episodios de una temporada"""
+    user_id = query.from_user.id
+    user_data = db.get_user(user_id)
+    can_forward = user_data and user_data.get('can_forward', False)
+    
+    await query.answer("Enviando todos los capítulos de la temporada...")
+    
+    # Mostrar acción de escribiendo
+    await context.bot.send_chat_action(
+        chat_id=query.message.chat_id,
+        action=ChatAction.TYPING
+    )
+    
+    try:
+        # Obtener episodios de la temporada
+        try:
+            episodes = db.get_season_episodes(series_id, season_number)
+        except Exception:
+            # Si la función no está disponible, filtrar de todos los episodios
+            all_episodes = db.get_series_episodes(series_id)
+            episodes = [ep for ep in all_episodes if (season_number-1)*100 < ep['episode_number'] <= season_number*100]
+        
+        if not episodes:
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text="<blockquote>❌ No se encontraron capítulos para esta temporada.</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+            return
+        
+        # Enviar mensaje de inicio
+        status_message = await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=f"<blockquote>⏳ Enviando {len(episodes)} capítulos de la temporada {season_number}... Por favor, espera.</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        
+        # Enviar cada capítulo
+        for i, episode in enumerate(episodes):
+            try:
+                # Actualizar estado periódicamente
+                if i % 5 == 0 and i > 0:
+                    await status_message.edit_text(
+                        f"<blockquote>⏳ Enviando capítulos... ({i}/{len(episodes)})</blockquote>",
+                        parse_mode=ParseMode.HTML
+                    )
+                
+                # Enviar capítulo
+                await context.bot.copy_message(
+                    chat_id=query.message.chat_id,
+                    from_chat_id=SEARCH_CHANNEL_ID,
+                    message_id=episode['message_id'],
+                    protect_content=not can_forward,  # Proteger según el plan
+                    disable_notification=(i < len(episodes) - 1)  # Solo notificar el último
+                )
+                
+                # Pequeña pausa para no sobrecargar
+                await asyncio.sleep(0.5)
+                
+            except Exception as e:
+                logger.error(f"Error enviando capítulo {i+1}: {e}")
+                continue
+        
+        # Actualizar mensaje de estado
+        await status_message.edit_text(
+            f"<blockquote>✅ Se han enviado todos los capítulos de la temporada {season_number} ({len(episodes)}).</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        
+        # Marcar el botón como seleccionado
+        keyboard = query.message.reply_markup.inline_keyboard
+        new_keyboard = []
+        
+        for row in keyboard:
+            new_row = []
+            for button in row:
+                if button.callback_data == query.data:
+                    # Marcar este botón como seleccionado
+                    new_row.append(InlineKeyboardButton(
+                        f"✅ {button.text}",
+                        callback_data=button.callback_data
+                    ))
+                else:
+                    new_row.append(button)
+            new_keyboard.append(new_row)
+        
+        # Actualizar el mensaje con el nuevo teclado
+        await query.edit_message_reply_markup(
+            reply_markup=InlineKeyboardMarkup(new_keyboard)
+        )
+        
+    except Exception as e:
+        logger.error(f"Error general enviando capítulos de temporada: {e}")
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=f"<blockquote>❌ Error al enviar los capítulos: {str(e)[:100]}</blockquote>",
+            parse_mode=ParseMode.HTML
+        )                	
 
 async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manejar recepción de nombre de contenido en modo carga masiva"""
@@ -4932,15 +5360,90 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         await verify_channel_membership(update, context)
         return
     
+    # Manejar solicitudes de temporadas
+    if data.startswith("season_") and not data.startswith("season_all_"):
+        try:
+            # Formato: season_[series_id]_[season_number]
+            _, series_id, season_number = data.split("_")
+            series_id = int(series_id)
+            season_number = int(season_number)
+            
+            await handle_season_callback(query, context, series_id, season_number)
+            return
+        except Exception as e:
+            logger.error(f"Error procesando solicitud de temporada: {e}")
+            await query.answer(f"Error: {str(e)[:200]}")
+            return
+    
+    # Manejar solicitudes de enviar todos los capítulos de una temporada
+    elif data.startswith("season_all_"):
+        try:
+            # Formato: season_all_[series_id]_[season_number]
+            _, _, series_id, season_number = data.split("_")
+            series_id = int(series_id)
+            season_number = int(season_number)
+            
+            # Implementar función para enviar todos los episodios de temporada
+            await send_all_season_episodes(query, context, series_id, season_number)
+            return
+        except Exception as e:
+            logger.error(f"Error procesando solicitud de todos los episodios de temporada: {e}")
+            await query.answer(f"Error: {str(e)[:200]}")
+            return
+    
+    # Manejar solicitud de volver a la serie
+    elif data.startswith("series_"):
+        try:
+            # Formato: series_[series_id]
+            _, series_id = data.split("_")
+            series_id = int(series_id)
+            
+            # Crear una actualización simulada para reutilizar handle_series_request
+            class SimulatedUpdate:
+                def __init__(self, effective_user, effective_chat, message):
+                    self.effective_user = effective_user
+                    self.effective_chat = effective_chat
+                    self.message = message
+            
+            class SimulatedMessage:
+                def __init__(self, chat_id):
+                    self.chat_id = chat_id
+                
+                async def reply_text(self, text, **kwargs):
+                    return await query.edit_message_text(text, **kwargs)
+            
+            simulated_msg = SimulatedMessage(query.message.chat_id)
+            simulated_update = SimulatedUpdate(
+                query.from_user, 
+                query.message.chat,
+                simulated_msg
+            )
+            
+            # Usar la función existente para mostrar temporadas
+            await handle_series_seasons_only(simulated_update, context, series_id, query)
+            return
+        except Exception as e:
+            logger.error(f"Error procesando solicitud de serie: {e}")
+            await query.answer(f"Error: {str(e)[:200]}")
+            return
+    
     # Manejar solicitudes de capítulos individuales
     if data.startswith("ep_") and not data.startswith("ep_all_"):
         try:
-            # Formato: ep_[series_id]_[episode_number]
-            _, series_id, episode_number = data.split("_")
-            series_id = int(series_id)
-            episode_number = int(episode_number)
-            
-            await send_episode(query, context, series_id, episode_number)
+            # Verificar si es formato directo (mensaje_id) o formato serie/episodio
+            parts = data.split("_")
+            if len(parts) == 4 and parts[3] == "direct":
+                # Formato: ep_[series_id]_[message_id]_direct
+                _, series_id, msg_id, _ = parts
+                msg_id = int(msg_id)
+                # Enviar episodio directamente por message_id
+                await send_episode_by_id(query, context, msg_id)
+            else:
+                # Formato original: ep_[series_id]_[episode_number]
+                _, series_id, episode_number = data.split("_")
+                series_id = int(series_id)
+                episode_number = int(episode_number)
+                await send_episode(query, context, series_id, episode_number)
             return
         except Exception as e:
             logger.error(f"Error procesando solicitud de capítulo: {e}")
