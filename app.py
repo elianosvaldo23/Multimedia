@@ -1656,13 +1656,23 @@ async def finalize_load_upload(update, context):
                 added_by=update.effective_user.id
             )
             
-            # Guardar cada episodio
+            # Guardar cada episodio - SIN incluir el parámetro 'season'
             for episode_info in all_episode_ids:
+                # Calcular el número de episodio absoluto para manejar múltiples temporadas
+                # Por ejemplo: T1E1=1, T1E2=2, T2E1=3, T2E2=4, etc.
+                season = episode_info['season']
+                episode_in_season = episode_info['episode']
+                
+                # Opción 1: usar episodio dentro de cada temporada - solo si tu app gestiona temporadas separadamente
+                episode_number = episode_in_season
+                
+                # Opción 2: calcular número absoluto - si tu app no considera temporadas
+                # episode_number = ((season - 1) * 100) + episode_in_season  # Numeración T1E1=1, T1E2=2, T2E1=201, T2E2=202
+                
                 db.add_episode(
                     series_id=series_id,
-                    episode_number=episode_info['episode'],
-                    message_id=episode_info['message_id'],
-                    season=episode_info['season']  # Opcional: si tu esquema soporta temporadas
+                    episode_number=episode_number,
+                    message_id=episode_info['message_id']
                 )
         except Exception as db_error:
             logger.error(f"Error guardando en base de datos: {db_error}")
