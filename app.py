@@ -935,11 +935,20 @@ async def finalize_multi_seasons_upload(update: Update, context: ContextTypes.DE
             parse_mode=ParseMode.HTML
         )
     
+    # Crear un diccionario para almacenar estadísticas de la subida
+    upload_stats = {
+        "total_seasons": len(valid_seasons),
+        "total_episodes": sum(len(eps) for eps in valid_seasons.values()),
+        "uploaded_episodes": 0,
+        "failed_episodes": 0,
+        "seasons_data": {}
+    }
+    
     try:
         # 1. Crear un identificador único para esta serie multi-temporada
         series_id = int(time.time())
         
-        # 2. Asegurar que la descripción tenga formato adecuado
+        # 2. Formatear la descripción adecuadamente
         if not description.startswith("<b>"):
             description = f"<b>{series_name}</b>\n\n{description}"
         
@@ -971,14 +980,28 @@ async def finalize_multi_seasons_upload(update: Update, context: ContextTypes.DE
             parse_mode=ParseMode.HTML
         )
         
-        sent_cover = await context.bot.send_photo(
-            chat_id=SEARCH_CHANNEL_ID,
-            photo=cover_photo,
-            caption=description,
-            parse_mode=ParseMode.HTML
-        )
-        
-        search_channel_cover_id = sent_cover.message_id
+        # Intentar subir la portada hasta 3 veces
+        max_retries = 3
+        retry_count = 0
+        while retry_count < max_retries:
+            try:
+                sent_cover = await context.bot.send_photo(
+                    chat_id=SEARCH_CHANNEL_ID,
+                    photo=cover_photo,
+                    caption=description,
+                    parse_mode=ParseMode.HTML
+                )
+                search_channel_cover_id = sent_cover.message_id
+                break
+            except Exception as e:
+                retry_count += 1
+                if retry_count >= max_retries:
+                    await status_message.edit_text(
+                        f"<blockquote>❌ Error al subir la portada al canal de búsqueda después de {max_retries} intentos: {str(e)[:100]}</blockquote>",
+                        parse_mode=ParseMode.HTML
+                    )
+                    return
+                await asyncio.sleep(3)  # Esperar 3 segundos antes de reintentar
         
         # 4. Generar URL para el botón "Ver ahora"
         view_url = f"https://t.me/MultimediaTVbot?start=multiseries_{series_id}"
@@ -990,13 +1013,29 @@ async def finalize_multi_seasons_upload(update: Update, context: ContextTypes.DE
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         # 6. Actualizar la portada en el canal de búsqueda con el botón
-        await context.bot.edit_message_reply_markup(
-            chat_id=SEARCH_CHANNEL_ID,
-            message_id=search_channel_cover_id,
-            reply_markup=reply_markup
-        )
+        try:
+            await context.bot.edit_message_reply_markup(
+                chat_id=SEARCH_CHANNEL_ID,
+                message_id=search_channel_cover_id,
+                reply_markup=reply_markup
+            )
+        except Exception as e:
+            logger.error(f"Error al añadir botón a la portada: {e}")
         
-        # 7. Procesar y subir cada temporada y sus capítulos
+        # 7. Guardar la serie principal en la base de datos
+        try:
+            db.add_multi_series(
+                series_id,
+                series_name,
+                description,
+                search_channel_cover_id,
+                update.effective_user.id
+            )
+        except Exception as db_error:
+            logger.error(f"Error guardando serie en la base de datos: {db_error}")
+            # Continuar a pesar del error
+        
+        # 8. Procesar y subir cada temporada y sus capítulos
         season_data = {}  # Para almacenar la información estructurada
         
         for season_name, episodes in valid_seasons.items():
@@ -1009,53 +1048,85 @@ async def finalize_multi_seasons_upload(update: Update, context: ContextTypes.DE
             season_id = int(f"{series_id}{hash(season_name) % 10000:04d}")
             
             # Guardar la temporada en la base de datos
-            db.add_season(season_id, series_id, season_name)
+            try:
+                db.add_season(season_id, series_id, season_name)
+            except Exception as season_db_error:
+                logger.error(f"Error guardando temporada en la base de datos: {season_db_error}")
+                # Continuar a pesar del error
             
             season_data[season_name] = []
+            upload_stats["seasons_data"][season_name] = {
+                "total": len(episodes),
+                "uploaded": 0,
+                "failed": 0
+            }
             
-            # Subir los capítulos de esta temporada en grupos para evitar timeout
-            episode_groups = [episodes[i:i+5] for i in range(0, len(episodes), 5)]
+            # Subir los capítulos de esta temporada en grupos más pequeños para evitar problemas
+            episode_groups = [episodes[i:i+3] for i in range(0, len(episodes), 3)]
             
             for group_index, group in enumerate(episode_groups):
                 await status_message.edit_text(
-                    f"<blockquote>⏳ Subiendo capítulos de <b>{season_name}</b>... ({group_index*5+1}-{min((group_index+1)*5, len(episodes))}/{len(episodes)})</blockquote>",
+                    f"<blockquote>⏳ Subiendo capítulos de <b>{season_name}</b>... ({group_index*3+1}-{min((group_index+1)*3, len(episodes))}/{len(episodes)})</blockquote>",
                     parse_mode=ParseMode.HTML
                 )
                 
                 for episode in group:
-                    # Enviar cada capítulo al canal de búsqueda
-                    try:
-                        original_message = await context.bot.copy_message(
-                            chat_id=SEARCH_CHANNEL_ID,
-                            from_chat_id=episode['chat_id'],
-                            message_id=episode['message_id'],
-                            disable_notification=True
-                        )
-                        
-                        # Guardar el episodio en la base de datos
-                        db.add_season_episode(
-                            season_id, 
-                            episode['episode_number'], 
-                            original_message.message_id
-                        )
-                        
-                        # Guardar la información del capítulo subido
-                        season_data[season_name].append({
-                            'message_id': original_message.message_id,
-                            'episode_number': episode['episode_number']
-                        })
-                        
-                        # Pequeña pausa para evitar rate limiting
-                        await asyncio.sleep(0.5)
-                    except Exception as e:
-                        logger.error(f"Error copiando episodio al canal de búsqueda: {e}")
-                        await status_message.edit_text(
-                            f"<blockquote>⚠️ Error al subir capítulo {episode['episode_number']} de {season_name}. Continuando con el siguiente...</blockquote>",
-                            parse_mode=ParseMode.HTML
-                        )
-                        await asyncio.sleep(1)
+                    # Enviar cada capítulo al canal de búsqueda con reintentos
+                    retry_count = 0
+                    uploaded = False
+                    
+                    while retry_count < max_retries and not uploaded:
+                        try:
+                            original_message = await context.bot.copy_message(
+                                chat_id=SEARCH_CHANNEL_ID,
+                                from_chat_id=episode['chat_id'],
+                                message_id=episode['message_id'],
+                                disable_notification=True
+                            )
+                            
+                            # Guardar el episodio en la base de datos
+                            try:
+                                db.add_season_episode(
+                                    season_id, 
+                                    episode['episode_number'], 
+                                    original_message.message_id
+                                )
+                            except Exception as ep_db_error:
+                                logger.error(f"Error guardando episodio en la base de datos: {ep_db_error}")
+                            
+                            # Guardar la información del capítulo subido
+                            season_data[season_name].append({
+                                'message_id': original_message.message_id,
+                                'episode_number': episode['episode_number']
+                            })
+                            
+                            upload_stats["uploaded_episodes"] += 1
+                            upload_stats["seasons_data"][season_name]["uploaded"] += 1
+                            uploaded = True
+                            
+                        except Exception as e:
+                            retry_count += 1
+                            logger.error(f"Error copiando episodio {episode['episode_number']} al canal de búsqueda (intento {retry_count}/{max_retries}): {e}")
+                            
+                            if retry_count >= max_retries:
+                                upload_stats["failed_episodes"] += 1
+                                upload_stats["seasons_data"][season_name]["failed"] += 1
+                                await status_message.edit_text(
+                                    f"<blockquote>⚠️ Error al subir capítulo {episode['episode_number']} de {season_name} después de {max_retries} intentos. Continuando con el siguiente...</blockquote>",
+                                    parse_mode=ParseMode.HTML
+                                )
+                                await asyncio.sleep(2)
+                            else:
+                                # Esperar más tiempo entre reintentos
+                                await asyncio.sleep(5)
+                    
+                    # Esperar más tiempo entre capítulos para evitar rate limiting
+                    await asyncio.sleep(2)
+                
+                # Esperar más tiempo entre grupos de capítulos
+                await asyncio.sleep(3)
         
-        # 8. Subir portada al canal principal
+        # 9. Subir portada al canal principal
         await status_message.edit_text(
             f"<blockquote>⏳ Subiendo portada al canal principal...</blockquote>",
             parse_mode=ParseMode.HTML
@@ -1069,7 +1140,7 @@ async def finalize_multi_seasons_upload(update: Update, context: ContextTypes.DE
                 parse_mode=ParseMode.HTML
             )
             
-            # 9. Actualizar la portada en el canal principal con el botón
+            # Actualizar la portada en el canal principal con el botón
             await context.bot.edit_message_reply_markup(
                 chat_id=CHANNEL_ID,
                 message_id=sent_cover_main.message_id,
@@ -1081,33 +1152,37 @@ async def finalize_multi_seasons_upload(update: Update, context: ContextTypes.DE
                 f"<blockquote>⚠️ Error al enviar portada al canal principal, pero la serie ya está en el canal de búsqueda.</blockquote>",
                 parse_mode=ParseMode.HTML
             )
+            await asyncio.sleep(2)
         
-        # 10. Guardar la serie principal en la base de datos
-        db.add_multi_series(
-            series_id,
-            series_name,
-            description,
-            search_channel_cover_id,
-            update.effective_user.id
-        )
+        # 10. Verificar integridad de la subida
+        actual_uploaded_episodes = sum(len(episodes) for episodes in season_data.values())
+        if actual_uploaded_episodes < upload_stats["total_episodes"]:
+            # Hay discrepancia entre lo que se intentó subir y lo que realmente se subió
+            logger.warning(f"Discrepancia en episodios subidos: {actual_uploaded_episodes} de {upload_stats['total_episodes']}")
         
         # 11. Reiniciar el estado
         context.user_data['multi_state'] = MULTI_SEASONS_STATE_IDLE
         context.user_data.pop('multi_seasons', None)
         
-        # 12. Informar al administrador del éxito
-        total_episodes = sum(len(eps) for eps in season_data.values())
-        await status_message.edit_text(
-            f"<blockquote>✅ Serie <b>{series_name}</b> completada exitosamente\n\n"
-            f"📊 Detalles:\n"
-            f"- Temporadas: {len(season_data)}\n"
-            f"- Total de capítulos: {total_episodes}\n"
-            f"- Subida a canal principal: ✓\n"
-            f"- Subida a canal de búsqueda: ✓\n"
-            f"- ID de la serie: {series_id}\n\n"
-            f"Los usuarios pueden acceder a través del botón 'Ver ahora'.</blockquote>",
-            parse_mode=ParseMode.HTML
-        )
+        # 12. Informar al administrador del éxito con detalles sobre posibles fallos
+        success_message = f"<blockquote>✅ Serie <b>{series_name}</b> completada\n\n"
+        success_message += f"📊 Detalles:\n"
+        success_message += f"- Temporadas: {upload_stats['total_seasons']}\n"
+        success_message += f"- Total de capítulos: {actual_uploaded_episodes}/{upload_stats['total_episodes']}\n"
+        
+        # Añadir detalles por temporada
+        for season_name, stats in upload_stats["seasons_data"].items():
+            success_message += f"  - {season_name}: {stats['uploaded']}/{stats['total']} capítulos subidos\n"
+        
+        if upload_stats["failed_episodes"] > 0:
+            success_message += f"⚠️ {upload_stats['failed_episodes']} capítulos no pudieron ser subidos\n"
+        
+        success_message += f"- Subida a canal principal: ✓\n"
+        success_message += f"- Subida a canal de búsqueda: ✓\n"
+        success_message += f"- ID de la serie: {series_id}\n\n"
+        success_message += f"Los usuarios pueden acceder a través del botón 'Ver ahora'.</blockquote>"
+        
+        await status_message.edit_text(success_message, parse_mode=ParseMode.HTML)
         
     except Exception as e:
         logger.error(f"Error en finalize_multi_seasons_upload: {e}")
@@ -1162,11 +1237,25 @@ async def handle_multi_series_request(update: Update, context: ContextTypes.DEFA
             return
         
         # Obtener las temporadas de la serie
-        seasons = db.get_seasons(series_id)
+        all_seasons = db.get_seasons(series_id)
         
-        if not seasons:
+        if not all_seasons:
             await update.message.reply_text(
                 "❌ Esta serie no tiene temporadas disponibles actualmente.",
+                parse_mode=ParseMode.HTML
+            )
+            return
+        
+        # Filtrar temporadas que realmente tengan capítulos
+        seasons_with_episodes = []
+        for season in all_seasons:
+            episodes = db.get_season_episodes(season['season_id'])
+            if episodes and len(episodes) > 0:
+                seasons_with_episodes.append(season)
+        
+        if not seasons_with_episodes:
+            await update.message.reply_text(
+                "❌ Esta serie no tiene capítulos disponibles actualmente.",
                 parse_mode=ParseMode.HTML
             )
             return
@@ -1185,10 +1274,10 @@ async def handle_multi_series_request(update: Update, context: ContextTypes.DEFA
         keyboard = []
         
         # Añadir un botón para cada temporada, organizados en filas de 2
-        for i in range(0, len(seasons), 2):
+        for i in range(0, len(seasons_with_episodes), 2):
             row = []
-            for j in range(i, min(i + 2, len(seasons))):
-                season = seasons[j]
+            for j in range(i, min(i + 2, len(seasons_with_episodes))):
+                season = seasons_with_episodes[j]
                 row.append(
                     InlineKeyboardButton(
                         f"{season['season_name']}",
@@ -1214,6 +1303,131 @@ async def handle_multi_series_request(update: Update, context: ContextTypes.DEFA
             f"Por favor, intenta más tarde.",
             parse_mode=ParseMode.HTML
         )
+        
+async def verify_multi_series_data(context, series_id):
+    """Verifica y corrige posibles inconsistencias en los datos de una serie multi-temporada"""
+    try:
+        # Obtener todas las temporadas
+        seasons = db.get_seasons(series_id)
+        
+        if not seasons:
+            return False, "No se encontraron temporadas para esta serie"
+        
+        inconsistencies = []
+        
+        for season in seasons:
+            # Verificar si la temporada tiene episodios
+            episodes = db.get_season_episodes(season['season_id'])
+            
+            if not episodes:
+                # Temporada sin episodios - eliminar la temporada
+                db.db.seasons.delete_one({'season_id': season['season_id']})
+                inconsistencies.append(f"Temporada eliminada: {season['season_name']} (sin capítulos)")
+                continue
+            
+            # Verificar si todos los episodios existen en el canal
+            for episode in episodes:
+                try:
+                    # Intentar obtener el mensaje para verificar que existe
+                    await context.bot.forward_message(
+                        chat_id=context.bot.id,  # Enviar al propio bot
+                        from_chat_id=SEARCH_CHANNEL_ID,
+                        message_id=episode['message_id'],
+                        disable_notification=True
+                    )
+                    
+                    # Eliminar el mensaje reenviado para no llenar el chat
+                    await context.bot.delete_message(
+                        chat_id=context.bot.id,
+                        message_id=context.bot.message_id
+                    )
+                    
+                except Exception:
+                    # El mensaje no existe, eliminar el episodio
+                    db.db.season_episodes.delete_one({'_id': episode['_id']})
+                    inconsistencies.append(f"Capítulo {episode['episode_number']} eliminado de {season['season_name']} (mensaje no encontrado)")
+        
+        if inconsistencies:
+            return True, "\n".join(inconsistencies)
+        else:
+            return True, "No se encontraron inconsistencias"
+        
+    except Exception as e:
+        logger.error(f"Error verificando datos de serie: {e}")
+        return False, f"Error durante la verificación: {str(e)[:100]}"        
+        
+async def repair_multi_series(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Comando para administradores para reparar series con múltiples temporadas"""
+    # Verificar que el usuario es administrador
+    if not update.effective_user or update.effective_user.id != ADMIN_ID:
+        return
+    
+    # Verificar si se proporcionó un ID de serie
+    if not context.args:
+        await update.message.reply_text(
+            "Uso: /repairmulti series_id\n"
+            "Ejemplo: /repairmulti 1746123924",
+            parse_mode=ParseMode.HTML
+        )
+        return
+    
+    try:
+        # Obtener el ID de la serie
+        series_id = int(context.args[0])
+        
+        # Verificar si la serie existe
+        series = db.get_multi_series(series_id)
+        
+        if not series:
+            await update.message.reply_text(
+                "❌ Serie no encontrada. Verifica el ID e intenta nuevamente.",
+                parse_mode=ParseMode.HTML
+            )
+            return
+        
+        # Enviar mensaje de estado
+        status_message = await update.message.reply_text(
+            f"<blockquote>⏳ Verificando y reparando la serie <b>{series['title']}</b>...</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        
+        # Verificar y reparar la serie
+        success, report = await verify_multi_series_data(context, series_id)
+        
+        if success:
+            # Obtener estadísticas actualizadas
+            seasons = db.get_seasons(series_id)
+            total_episodes = 0
+            
+            for season in seasons:
+                episodes = db.get_season_episodes(season['season_id'])
+                total_episodes += len(episodes)
+            
+            await status_message.edit_text(
+                f"<blockquote>✅ Reparación finalizada para la serie <b>{series['title']}</b>\n\n"
+                f"📊 Estadísticas actuales:\n"
+                f"- Temporadas: {len(seasons)}\n"
+                f"- Total de capítulos: {total_episodes}\n\n"
+                f"📝 Reporte de reparación:\n{report}</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+        else:
+            await status_message.edit_text(
+                f"<blockquote>❌ Error en la reparación: {report}</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+    
+    except ValueError:
+        await update.message.reply_text(
+            "❌ El ID de serie debe ser un número entero.",
+            parse_mode=ParseMode.HTML
+        )
+    except Exception as e:
+        logger.error(f"Error en repair_multi_series: {e}")
+        await update.message.reply_text(
+            f"❌ Error desconocido: {str(e)[:100]}",
+            parse_mode=ParseMode.HTML
+        )       
 
 async def handle_season_selection(query, context, season_id):
     """Manejar la selección de una temporada"""
@@ -5553,6 +5767,7 @@ def main() -> None:
     application.add_handler(CommandHandler("a", a_command))
     application.add_handler(CommandHandler("cancelmulti", cancel_multi_command))
     application.add_handler(CommandHandler("load", load_command))
+    application.add_handler(CommandHandler("cancelmulti", cancel_multi_command))
     application.add_handler(CommandHandler("upser", upser_command))
     application.add_handler(CommandHandler("cancelupser", cancel_upser_command))
     application.add_handler(CommandHandler("add", add_command))
