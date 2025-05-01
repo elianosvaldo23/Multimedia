@@ -1115,11 +1115,7 @@ async def finalize_multi_seasons_upload(update: Update, context: ContextTypes.DE
             f"<blockquote>❌ Error al procesar la serie: {str(e)[:100]}</blockquote>",
             parse_mode=ParseMode.HTML
         )
-```
 
-Ahora, vamos a crear las funciones para manejar las solicitudes de los usuarios:
-
-```python
 async def handle_multi_series_request(update: Update, context: ContextTypes.DEFAULT_TYPE, series_id: int) -> None:
     """Manejar la solicitud de visualización de una serie con múltiples temporadas"""
     user_id = update.effective_user.id
