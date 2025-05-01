@@ -634,6 +634,9 @@ class Database:
     def get_seasons(self, series_id):
         """Obtener todas las temporadas de una serie"""
         try:
+            # Convertir a int para asegurar que la comparación funciona correctamente
+            series_id = int(series_id)
+            # Asegurar que estamos buscando por series_id exacto y no por otra interpretación
             return list(self.db.seasons.find({'series_id': series_id}).sort('season_name', 1))
         except Exception as e:
             logger.error(f"Error al obtener temporadas: {e}")
