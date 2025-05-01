@@ -1005,6 +1005,12 @@ async def finalize_multi_seasons_upload(update: Update, context: ContextTypes.DE
                 parse_mode=ParseMode.HTML
             )
             
+            # Generar un ID único para la temporada
+            season_id = int(f"{series_id}{hash(season_name) % 10000:04d}")
+            
+            # Guardar la temporada en la base de datos
+            db.add_season(season_id, series_id, season_name)
+            
             season_data[season_name] = []
             
             # Subir los capítulos de esta temporada en grupos para evitar timeout
@@ -1024,6 +1030,13 @@ async def finalize_multi_seasons_upload(update: Update, context: ContextTypes.DE
                             from_chat_id=episode['chat_id'],
                             message_id=episode['message_id'],
                             disable_notification=True
+                        )
+                        
+                        # Guardar el episodio en la base de datos
+                        db.add_season_episode(
+                            season_id, 
+                            episode['episode_number'], 
+                            original_message.message_id
                         )
                         
                         # Guardar la información del capítulo subido
@@ -1069,44 +1082,14 @@ async def finalize_multi_seasons_upload(update: Update, context: ContextTypes.DE
                 parse_mode=ParseMode.HTML
             )
         
-        # 10. Guardar toda la información en la base de datos
-        await status_message.edit_text(
-            f"<blockquote>⏳ Guardando información en la base de datos...</blockquote>",
-            parse_mode=ParseMode.HTML
+        # 10. Guardar la serie principal en la base de datos
+        db.add_multi_series(
+            series_id,
+            series_name,
+            description,
+            search_channel_cover_id,
+            update.effective_user.id
         )
-        
-        try:
-            # Guardar la serie principal
-            db.execute(
-                "INSERT INTO multi_series (series_id, title, description, cover_message_id, added_by, added_date) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
-                (series_id, series_name, description, search_channel_cover_id, update.effective_user.id, datetime.now())
-            )
-            
-            # Guardar cada temporada
-            for season_name, episodes in season_data.items():
-                # Generar un ID único para la temporada
-                season_id = int(f"{series_id}{hash(season_name) % 10000:04d}")
-                
-                db.execute(
-                    "INSERT INTO seasons (season_id, series_id, season_name, added_date) VALUES (?, ?, ?, ?)",
-                    (season_id, series_id, season_name, datetime.now())
-                )
-                
-                # Guardar cada episodio de la temporada
-                for episode in episodes:
-                    db.execute(
-                        "INSERT INTO season_episodes (season_id, episode_number, message_id) VALUES (?, ?, ?)",
-                        (season_id, episode['episode_number'], episode['message_id'])
-                    )
-            
-        except Exception as db_error:
-            logger.error(f"Error guardando en la base de datos: {db_error}")
-            await status_message.edit_text(
-                f"<blockquote>⚠️ La serie se ha subido a los canales pero hubo un problema al guardarla en la base de datos: {str(db_error)[:100]}</blockquote>",
-                parse_mode=ParseMode.HTML
-            )
-            return
         
         # 11. Reiniciar el estado
         context.user_data['multi_state'] = MULTI_SEASONS_STATE_IDLE
@@ -1132,7 +1115,11 @@ async def finalize_multi_seasons_upload(update: Update, context: ContextTypes.DE
             f"<blockquote>❌ Error al procesar la serie: {str(e)[:100]}</blockquote>",
             parse_mode=ParseMode.HTML
         )
+```
 
+Ahora, vamos a crear las funciones para manejar las solicitudes de los usuarios:
+
+```python
 async def handle_multi_series_request(update: Update, context: ContextTypes.DEFAULT_TYPE, series_id: int) -> None:
     """Manejar la solicitud de visualización de una serie con múltiples temporadas"""
     user_id = update.effective_user.id
@@ -1169,10 +1156,7 @@ async def handle_multi_series_request(update: Update, context: ContextTypes.DEFA
     
     try:
         # Obtener datos de la serie multi-temporada
-        series = db.execute(
-            "SELECT * FROM multi_series WHERE series_id = ?", 
-            (series_id,)
-        ).fetchone()
+        series = db.get_multi_series(series_id)
         
         if not series:
             await update.message.reply_text(
@@ -1182,10 +1166,7 @@ async def handle_multi_series_request(update: Update, context: ContextTypes.DEFA
             return
         
         # Obtener las temporadas de la serie
-        seasons = db.execute(
-            "SELECT * FROM seasons WHERE series_id = ? ORDER BY season_name",
-            (series_id,)
-        ).fetchall()
+        seasons = db.get_seasons(series_id)
         
         if not seasons:
             await update.message.reply_text(
@@ -1246,10 +1227,7 @@ async def handle_season_selection(query, context, season_id):
     
     try:
         # Obtener información de la temporada
-        season = db.execute(
-            "SELECT * FROM seasons WHERE season_id = ?",
-            (season_id,)
-        ).fetchone()
+        season = db.get_season(season_id)
         
         if not season:
             await context.bot.send_message(
@@ -1259,11 +1237,8 @@ async def handle_season_selection(query, context, season_id):
             )
             return
         
-                # Obtener capítulos de la temporada
-        episodes = db.execute(
-            "SELECT * FROM season_episodes WHERE season_id = ? ORDER BY episode_number",
-            (season_id,)
-        ).fetchall()
+        # Obtener capítulos de la temporada
+        episodes = db.get_season_episodes(season_id)
         
         if not episodes:
             await context.bot.send_message(
@@ -1332,10 +1307,7 @@ async def handle_back_to_seasons(query, context, series_id):
     
     try:
         # Obtener datos de la serie
-        series = db.execute(
-            "SELECT * FROM multi_series WHERE series_id = ?", 
-            (series_id,)
-        ).fetchone()
+        series = db.get_multi_series(series_id)
         
         if not series:
             await query.edit_message_text(
@@ -1345,10 +1317,7 @@ async def handle_back_to_seasons(query, context, series_id):
             return
         
         # Obtener las temporadas de la serie
-        seasons = db.execute(
-            "SELECT * FROM seasons WHERE series_id = ? ORDER BY season_name",
-            (series_id,)
-        ).fetchall()
+        seasons = db.get_seasons(series_id)
         
         if not seasons:
             await query.edit_message_text(
@@ -1459,10 +1428,7 @@ async def send_all_multi_episodes(query, context, season_id):
     
     try:
         # Obtener todos los capítulos de la temporada
-        episodes = db.execute(
-            "SELECT * FROM season_episodes WHERE season_id = ? ORDER BY episode_number",
-            (season_id,)
-        ).fetchall()
+        episodes = db.get_season_episodes(season_id)
         
         if not episodes:
             await context.bot.send_message(
@@ -1473,10 +1439,7 @@ async def send_all_multi_episodes(query, context, season_id):
             return
         
         # Obtener el nombre de la temporada
-        season = db.execute(
-            "SELECT season_name FROM seasons WHERE season_id = ?",
-            (season_id,)
-        ).fetchone()
+        season = db.get_season(season_id)
         season_name = season['season_name'] if season else "Temporada"
         
         # Enviar mensaje de inicio
