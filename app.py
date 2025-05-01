@@ -1044,8 +1044,18 @@ async def finalize_multi_seasons_upload(update: Update, context: ContextTypes.DE
                 parse_mode=ParseMode.HTML
             )
             
-            # Generar un ID único para la temporada
-            season_id = int(f"{series_id}{hash(season_name) % 10000:04d}")
+            # Generar un ID único para la temporada (usando un método más robusto)
+            # En lugar de usar hash, que puede variar entre ejecuciones, usar un método determinista
+            # Extraer número de temporada si existe
+            season_num_match = re.search(r'temporada\s*(\d+)', season_name.lower())
+            if season_num_match:
+                season_num = int(season_num_match.group(1))
+                # Usar el número de temporada como parte del ID
+                season_id = int(f"{series_id}{season_num:03d}")
+            else:
+                # Si no tiene número, usar un número incremental
+                season_idx = list(valid_seasons.keys()).index(season_name) + 1
+                season_id = int(f"{series_id}{season_idx:03d}")
             
             # Guardar la temporada en la base de datos
             try:
@@ -1236,12 +1246,19 @@ async def handle_multi_series_request(update: Update, context: ContextTypes.DEFA
             )
             return
         
-        # Obtener las temporadas de la serie
-        all_seasons = db.get_seasons(series_id)
+        # Convertir series_id a int para asegurar la comparación correcta
+        series_id = int(series_id)
+        
+        # Obtener las temporadas de la serie directamente de la colección seasons
+        all_seasons = list(db.db.seasons.find({'series_id': series_id}))
+        
+        # Registrar para depuración
+        logger.info(f"Series ID: {series_id}, Tipo: {type(series_id)}")
+        logger.info(f"Temporadas encontradas: {len(all_seasons)}")
         
         if not all_seasons:
             await update.message.reply_text(
-                "❌ Esta serie no tiene temporadas disponibles actualmente.",
+                f"❌ Esta serie (ID: {series_id}) no tiene temporadas disponibles actualmente.",
                 parse_mode=ParseMode.HTML
             )
             return
@@ -1249,9 +1266,13 @@ async def handle_multi_series_request(update: Update, context: ContextTypes.DEFA
         # Filtrar temporadas que realmente tengan capítulos
         seasons_with_episodes = []
         for season in all_seasons:
-            episodes = db.get_season_episodes(season['season_id'])
+            season_id = season['season_id']
+            episodes = list(db.db.season_episodes.find({'season_id': season_id}))
             if episodes and len(episodes) > 0:
+                # Añadir también el conteo de episodios para mostrarlo
+                season['episode_count'] = len(episodes)
                 seasons_with_episodes.append(season)
+                logger.info(f"Temporada {season['season_name']}: {len(episodes)} episodios")
         
         if not seasons_with_episodes:
             await update.message.reply_text(
@@ -1259,6 +1280,18 @@ async def handle_multi_series_request(update: Update, context: ContextTypes.DEFA
                 parse_mode=ParseMode.HTML
             )
             return
+        
+        # Ordenar temporadas para una mejor visualización
+        # Intentar extraer número de temporada para ordenar numéricamente
+        for season in seasons_with_episodes:
+            match = re.search(r'temporada\s*(\d+)', season['season_name'].lower())
+            if match:
+                season['temp_num'] = int(match.group(1))
+            else:
+                season['temp_num'] = 999  # Para temporadas sin número explícito
+        
+        # Ordenar por número de temporada
+        seasons_with_episodes.sort(key=lambda x: x.get('temp_num', 999))
         
         # Obtener cover_message_id
         cover_message_id = series['cover_message_id']
@@ -1278,9 +1311,11 @@ async def handle_multi_series_request(update: Update, context: ContextTypes.DEFA
             row = []
             for j in range(i, min(i + 2, len(seasons_with_episodes))):
                 season = seasons_with_episodes[j]
+                # Añadir conteo de episodios al nombre del botón
+                button_text = f"{season['season_name']} ({season.get('episode_count', 0)} caps)"
                 row.append(
                     InlineKeyboardButton(
-                        f"{season['season_name']}",
+                        button_text,
                         callback_data=f"season_{season['season_id']}"
                     )
                 )
@@ -1290,7 +1325,7 @@ async def handle_multi_series_request(update: Update, context: ContextTypes.DEFA
         
         # Enviar mensaje con botones
         await update.message.reply_text(
-            f"📺 <b>{series['title']}</b>\n\n"
+            f"📺 <b>{series['title']}</b> - {len(seasons_with_episodes)} temporadas\n\n"
             f"Selecciona una temporada para ver sus capítulos:",
             reply_markup=reply_markup,
             parse_mode=ParseMode.HTML
@@ -1303,6 +1338,81 @@ async def handle_multi_series_request(update: Update, context: ContextTypes.DEFA
             f"Por favor, intenta más tarde.",
             parse_mode=ParseMode.HTML
         )
+        
+async def diagnose_multi_series(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Comando para administradores para diagnosticar problemas con series multi-temporada"""
+    # Verificar que el usuario es administrador
+    if not update.effective_user or update.effective_user.id != ADMIN_ID:
+        return
+    
+    # Verificar si se proporcionó un ID de serie
+    if not context.args:
+        await update.message.reply_text(
+            "Uso: /diagnosemulti series_id\n"
+            "Ejemplo: /diagnosemulti 1746123924",
+            parse_mode=ParseMode.HTML
+        )
+        return
+    
+    try:
+        # Obtener el ID de la serie
+        series_id = int(context.args[0])
+        
+        # Enviar mensaje de estado
+        status_message = await update.message.reply_text(
+            f"<blockquote>⏳ Diagnosticando serie ID {series_id}...</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        
+        # Obtener datos de la serie
+        series = db.get_multi_series(series_id)
+        
+        if not series:
+            await status_message.edit_text(
+                f"<blockquote>❌ Serie ID {series_id} no encontrada en la base de datos.</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+            return
+        
+        # Hacer la consulta directa a la colección de temporadas
+        all_seasons = list(db.db.seasons.find({'series_id': series_id}))
+        
+        # Generar informe
+        report = f"<blockquote>📊 <b>Diagnóstico de Serie ID {series_id}</b>\n\n"
+        report += f"<b>Título:</b> {series['title']}\n"
+        report += f"<b>Temporadas en DB:</b> {len(all_seasons)}\n\n"
+        
+        if all_seasons:
+            report += "<b>Detalle de temporadas:</b>\n"
+            for idx, season in enumerate(all_seasons):
+                season_id = season['season_id']
+                season_name = season['season_name']
+                
+                # Contar episodios de esta temporada
+                episodes = list(db.db.season_episodes.find({'season_id': season_id}))
+                report += f"{idx+1}. <b>{season_name}</b> (ID: {season_id}): {len(episodes)} capítulos\n"
+                
+                # Si hay episodios, mostrar algunos detalles
+                if episodes:
+                    report += f"   - Primer capítulo: #{episodes[0]['episode_number']} (ID: {episodes[0]['message_id']})\n"
+                    report += f"   - Último capítulo: #{episodes[-1]['episode_number']} (ID: {episodes[-1]['message_id']})\n"
+        
+        report += "</blockquote>"
+        
+        # Mostrar el informe
+        await status_message.edit_text(report, parse_mode=ParseMode.HTML)
+        
+    except ValueError:
+        await update.message.reply_text(
+            "❌ El ID de serie debe ser un número entero.",
+            parse_mode=ParseMode.HTML
+        )
+    except Exception as e:
+        logger.error(f"Error en diagnose_multi_series: {e}")
+        await update.message.reply_text(
+            f"❌ Error durante el diagnóstico: {str(e)[:100]}",
+            parse_mode=ParseMode.HTML
+        )        
         
 async def verify_multi_series_data(context, series_id):
     """Verifica y corrige posibles inconsistencias en los datos de una serie multi-temporada"""
@@ -5766,9 +5876,11 @@ def main() -> None:
     application.add_handler(CommandHandler("plan", set_user_plan))
     application.add_handler(CommandHandler("a", a_command))
     application.add_handler(CommandHandler("cancelmulti", cancel_multi_command))
+    application.add_handler(CommandHandler("repairmulti", repair_multi_series))
     application.add_handler(CommandHandler("load", load_command))
     application.add_handler(CommandHandler("cancelmulti", cancel_multi_command))
     application.add_handler(CommandHandler("upser", upser_command))
+    application.add_handler(CommandHandler("diagnosemulti", diagnose_multi_series))
     application.add_handler(CommandHandler("cancelupser", cancel_upser_command))
     application.add_handler(CommandHandler("add", add_command))
     application.add_handler(CommandHandler("canceladd", cancel_add_command))
