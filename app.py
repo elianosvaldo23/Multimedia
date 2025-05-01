@@ -75,6 +75,12 @@ LOAD_STATE_INACTIVE = 0     # No hay carga masiva en proceso
 LOAD_STATE_WAITING_NAME = 1 # Esperando nombre del contenido
 LOAD_STATE_WAITING_FILES = 2 # Esperando archivos después de recibir nombre
 
+# Constantes para el sistema de carga de series con múltiples temporadas
+MULTI_SEASONS_STATE_IDLE = 0        # No hay carga de temporadas en proceso
+MULTI_SEASONS_STATE_RECEIVING = 1   # Recibiendo capítulos de temporada actual
+MULTI_SEASONS_STATE_COVER = 2       # Esperando portada con descripción
+MULTI_SEASONS_STATE_NEW_SEASON = 3  # Esperando nombre de nueva temporada
+
 
 # Enable logging
 logging.basicConfig(
@@ -174,12 +180,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         
     user = update.effective_user
     
-    # Comprobar si es una solicitud de contenido específico
-    if context.args and context.args[0].startswith('content_'):
+    # Comprobar si es una solicitud de serie con múltiples temporadas
+    if context.args and context.args[0].startswith('multiseries_'):
         try:
-            content_id = int(context.args[0].replace('content_', ''))
-            user_data = db.get_user(user.id)
-            can_forward = user_data and user_data.get('can_forward', False)
+            series_id = int(context.args[0].replace('multiseries_', ''))
+            await handle_multi_series_request(update, context, series_id)
+            return
+        except (ValueError, IndexError) as e:
+            logger.error(f"Error procesando multiseries_id: {e}")
             
             # Mostrar acción de escribiendo mientras se procesa
             await context.bot.send_chat_action(
@@ -615,6 +623,928 @@ async def imdb_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         logger.error(f"Error en comando imdb: {e}")
         await processing_msg.edit_text(
             f"❌ Error al procesar la información de IMDb: {str(e)[:100]}",
+            parse_mode=ParseMode.HTML
+        )
+
+async def a_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Comando para administradores para añadir series con múltiples temporadas"""
+    # Verificar que el usuario es administrador
+    if not update.effective_user or update.effective_user.id != ADMIN_ID:
+        return
+    
+    # Obtener el estado actual
+    multi_state = context.user_data.get('multi_state', MULTI_SEASONS_STATE_IDLE)
+    
+    # Si estamos en estado IDLE, iniciar el proceso pidiendo el nombre de la serie
+    if multi_state == MULTI_SEASONS_STATE_IDLE:
+        # Verificar si el usuario proporcionó un nombre para la serie
+        if not context.args:
+            await update.message.reply_text(
+                "Uso: /a nombre_de_la_serie\n"
+                "Ejemplo: /a La que se avecina",
+                parse_mode=ParseMode.HTML
+            )
+            return
+            
+        # Tomar el nombre de la serie de los argumentos
+        series_name = " ".join(context.args)
+        
+        # Inicializar estructura de datos para la serie multi-temporada
+        context.user_data['multi_seasons'] = {
+            'series_name': series_name,
+            'seasons': {},
+            'current_season': None,
+            'cover': None,
+            'description': None
+        }
+        
+        # Cambiar al estado de espera de nombre de la primera temporada
+        context.user_data['multi_state'] = MULTI_SEASONS_STATE_NEW_SEASON
+        
+        await update.message.reply_text(
+            f"📺 <b>Modo de carga de serie multi-temporada activado</b>\n\n"
+            f"Serie: <b>{series_name}</b>\n\n"
+            f"<blockquote>"
+            f"1️⃣ Ahora envía el nombre de la primera temporada (ej: 'La que se avecina: Temporada 1')\n"
+            f"2️⃣ Luego envía todos los capítulos de esa temporada\n"
+            f"3️⃣ Para añadir otra temporada, envía nuevamente el comando /a seguido del nombre de la siguiente temporada\n"
+            f"4️⃣ Cuando hayas terminado de enviar todas las temporadas, envía una imagen con la descripción\n"
+            f"5️⃣ El bot procesará todo automáticamente\n"
+            f"</blockquote>\n"
+            f"Para cancelar el proceso, envía /cancelmulti",
+            parse_mode=ParseMode.HTML
+        )
+    
+    # Si estamos en estado recibiendo capítulos, significa que queremos añadir nueva temporada
+    elif multi_state == MULTI_SEASONS_STATE_RECEIVING:
+        # Verificar si el usuario proporcionó un nombre para la nueva temporada
+        if not context.args:
+            await update.message.reply_text(
+                "Uso: /a nombre_de_la_temporada\n"
+                "Ejemplo: /a La que se avecina: Temporada 2",
+                parse_mode=ParseMode.HTML
+            )
+            return
+            
+        # Tomar el nombre de la temporada de los argumentos
+        season_name = " ".join(context.args)
+        
+        # Guardar la temporada actual y prepararla para la nueva
+        context.user_data['multi_state'] = MULTI_SEASONS_STATE_RECEIVING
+        context.user_data['multi_seasons']['current_season'] = season_name
+        
+        # Inicializar lista de capítulos para esta temporada
+        if season_name not in context.user_data['multi_seasons']['seasons']:
+            context.user_data['multi_seasons']['seasons'][season_name] = []
+        
+        await update.message.reply_text(
+            f"✅ <b>Nueva temporada iniciada:</b> {season_name}\n\n"
+            f"<blockquote>"
+            f"Ahora envía todos los capítulos de esta temporada en orden.\n"
+            f"Cuando termines con esta temporada, envía nuevamente /a con el nombre de la siguiente temporada\n"
+            f"o envía una imagen con descripción para finalizar la carga completa.</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+    
+    # Si estamos en estado espera de nombre de nueva temporada
+    elif multi_state == MULTI_SEASONS_STATE_NEW_SEASON:
+        # Verificar si el usuario proporcionó un nombre para la temporada
+        if not context.args:
+            await update.message.reply_text(
+                "Uso: /a nombre_de_la_temporada\n"
+                "Ejemplo: /a La que se avecina: Temporada 1",
+                parse_mode=ParseMode.HTML
+            )
+            return
+            
+        # Tomar el nombre de la temporada de los argumentos
+        season_name = " ".join(context.args)
+        
+        # Guardar la temporada actual
+        context.user_data['multi_state'] = MULTI_SEASONS_STATE_RECEIVING
+        context.user_data['multi_seasons']['current_season'] = season_name
+        
+        # Inicializar lista de capítulos para esta temporada
+        if season_name not in context.user_data['multi_seasons']['seasons']:
+            context.user_data['multi_seasons']['seasons'][season_name] = []
+        
+        await update.message.reply_text(
+            f"✅ <b>Temporada iniciada:</b> {season_name}\n\n"
+            f"<blockquote>"
+            f"Ahora envía todos los capítulos de esta temporada en orden.\n"
+            f"Cuando termines con esta temporada, envía nuevamente /a con el nombre de la siguiente temporada\n"
+            f"o envía una imagen con descripción para finalizar la carga completa.</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+    
+    # Si estamos esperando la portada y ya la tenemos, finalizar
+    elif multi_state == MULTI_SEASONS_STATE_COVER and context.user_data.get('multi_seasons', {}).get('cover'):
+        await finalize_multi_seasons_upload(update, context)
+
+async def cancel_multi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Cancelar el proceso de carga de serie con múltiples temporadas"""
+    # Verificar que el usuario es administrador
+    if not update.effective_user or update.effective_user.id != ADMIN_ID:
+        return
+    
+    # Reiniciar el estado
+    context.user_data['multi_state'] = MULTI_SEASONS_STATE_IDLE
+    context.user_data.pop('multi_seasons', None)
+    
+    await update.message.reply_text(
+        "<blockquote>❌ Proceso de carga de serie multi-temporada cancelado.\n\n"
+        "Todos los datos temporales han sido eliminados.</blockquote>",
+        parse_mode=ParseMode.HTML
+    )
+
+async def handle_multi_seasons_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manejar la recepción de capítulos y portada durante el proceso de carga de series multi-temporada"""
+    # Verificar que update y effective_user no sean None
+    if not update or not update.effective_user:
+        return
+        
+    user = update.effective_user
+    
+    # Verificar que el usuario es administrador
+    if user.id != ADMIN_ID:
+        return
+    
+    # Verificar si estamos en modo de carga de series multi-temporada
+    multi_state = context.user_data.get('multi_state', MULTI_SEASONS_STATE_IDLE)
+    if multi_state == MULTI_SEASONS_STATE_IDLE:
+        return  # No estamos en modo de carga de series multi-temporada
+    
+    # Si recibimos un mensaje con foto y estamos en modo de espera de capítulos o nueva temporada,
+    # asumimos que es la portada final y cambiamos al estado final
+    if update.message.photo and (multi_state == MULTI_SEASONS_STATE_RECEIVING or multi_state == MULTI_SEASONS_STATE_NEW_SEASON):
+        # Cambiar al estado de espera de portada
+        context.user_data['multi_state'] = MULTI_SEASONS_STATE_COVER
+        
+        # Guardar la portada y descripción
+        context.user_data['multi_seasons']['cover'] = update.message.photo[-1].file_id
+        context.user_data['multi_seasons']['description'] = update.message.caption or ""
+        
+        # Verificar si hay temporadas con capítulos
+        seasons = context.user_data.get('multi_seasons', {}).get('seasons', {})
+        valid_seasons = {name: chapters for name, chapters in seasons.items() if chapters}
+        
+        if not valid_seasons:
+            await update.message.reply_text(
+                "<blockquote>⚠️ No se ha recibido ningún capítulo para ninguna temporada.\n\n"
+                "No se puede finalizar la carga sin capítulos.</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+            return
+        
+        await update.message.reply_text(
+            f"<blockquote>✅ Portada recibida correctamente.\n\n"
+            f"Temporadas detectadas: {len(valid_seasons)}\n"
+            f"Procesando la subida de la serie completa...</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        
+        # Finalizar la subida automáticamente
+        await finalize_multi_seasons_upload(update, context)
+        return
+    
+    # Si estamos en modo de recepción y recibimos un video/documento, es un capítulo
+    if (update.message.video or update.message.document) and multi_state == MULTI_SEASONS_STATE_RECEIVING:
+        # Verificar que tenemos una temporada actual seleccionada
+        current_season = context.user_data.get('multi_seasons', {}).get('current_season')
+        if not current_season:
+            await update.message.reply_text(
+                "<blockquote>⚠️ Error: No hay una temporada seleccionada actualmente.\n\n"
+                "Envía primero '/a Nombre de la temporada' para seleccionar una temporada.</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+            return
+        
+        # Obtener información del capítulo
+        message_id = update.message.message_id
+        chat_id = update.effective_chat.id
+        original_caption = update.message.caption or ""
+        file_name = update.message.document.file_name if update.message.document else None
+        
+        # Intentar extraer número de capítulo del nombre o caption
+        episode_num = len(context.user_data['multi_seasons']['seasons'][current_season]) + 1
+        caption_or_filename = original_caption or file_name or ""
+        
+        # Buscar patrón como Exx, Episodio xx, Capítulo xx
+        episode_pattern = re.search(r'[Ee](\d+)|[Ee]pisod[ei]o\s*(\d+)|[Cc]ap[ií]tulo\s*(\d+)', caption_or_filename)
+        if episode_pattern:
+            # Usar el primer grupo que tenga valor
+            for group in episode_pattern.groups():
+                if group:
+                    try:
+                        episode_num = int(group)
+                        break
+                    except ValueError:
+                        pass
+        
+        # Crear nuevo caption si es necesario
+        if not original_caption or "Capítulo" not in original_caption:
+            new_caption = f"{current_season} - Capítulo {episode_num}"
+            
+            # Reenviar el archivo con el nuevo caption
+            try:
+                if update.message.video:
+                    file_id = update.message.video.file_id
+                    # Borrar el mensaje original
+                    await context.bot.delete_message(
+                        chat_id=chat_id, 
+                        message_id=message_id
+                    )
+                    # Enviar un nuevo mensaje con el caption correcto
+                    new_message = await context.bot.send_video(
+                        chat_id=chat_id,
+                        video=file_id,
+                        caption=new_caption
+                    )
+                    # Actualizar el message_id para guardarlo correctamente
+                    message_id = new_message.message_id
+                    caption = new_caption
+                elif update.message.document:
+                    file_id = update.message.document.file_id
+                    # Borrar el mensaje original
+                    await context.bot.delete_message(
+                        chat_id=chat_id, 
+                        message_id=message_id
+                    )
+                    # Enviar un nuevo mensaje con el caption correcto
+                    new_message = await context.bot.send_document(
+                        chat_id=chat_id,
+                        document=file_id,
+                        caption=new_caption
+                    )
+                    # Actualizar el message_id para guardarlo correctamente
+                    message_id = new_message.message_id
+                    caption = new_caption
+            except Exception as e:
+                logger.error(f"Error al reenviar con nuevo caption: {e}")
+                caption = original_caption
+        else:
+            caption = original_caption
+        
+        # Guardar el capítulo con todos los datos
+        episode_data = {
+            'message_id': message_id,
+            'episode_number': episode_num,
+            'chat_id': chat_id,
+            'caption': caption,
+            'file_name': file_name
+        }
+        
+        # Añadir a la lista de episodios de la temporada actual
+        context.user_data['multi_seasons']['seasons'][current_season].append(episode_data)
+        
+        # Confirmar la recepción del capítulo
+        await update.message.reply_text(
+            f"<blockquote>✅ Capítulo {episode_num} recibido y guardado para <b>{current_season}</b>.\n"
+            f"Total de capítulos en esta temporada: {len(context.user_data['multi_seasons']['seasons'][current_season])}</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+
+async def finalize_multi_seasons_upload(update: Update, context: ContextTypes.DEFAULT_TYPE, status_message=None) -> None:
+    """Finalizar el proceso de carga y subir la serie con múltiples temporadas a los canales"""
+    # Obtener datos de la serie
+    multi_seasons = context.user_data.get('multi_seasons', {})
+    series_name = multi_seasons.get('series_name', 'Serie sin nombre')
+    seasons = multi_seasons.get('seasons', {})
+    cover_photo = multi_seasons.get('cover')
+    description = multi_seasons.get('description', "")
+    
+    # Verificar que tenemos todos los datos necesarios
+    valid_seasons = {name: chapters for name, chapters in seasons.items() if chapters}
+    if not valid_seasons or not cover_photo:
+        error_msg = "❌ No hay suficientes datos para subir la serie."
+        if not valid_seasons:
+            error_msg += " No hay temporadas con capítulos."
+        if not cover_photo:
+            error_msg += " No hay portada."
+        
+        if status_message:
+            await status_message.edit_text(f"<blockquote>{error_msg}</blockquote>", parse_mode=ParseMode.HTML)
+        else:
+            await update.message.reply_text(f"<blockquote>{error_msg}</blockquote>", parse_mode=ParseMode.HTML)
+        return
+    
+    # Crear un mensaje de estado si no existe
+    if not status_message:
+        status_message = await update.message.reply_text(
+            f"<blockquote>⏳ Procesando la serie <b>{series_name}</b> con {len(valid_seasons)} temporadas...</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+    
+    try:
+        # 1. Crear un identificador único para esta serie multi-temporada
+        series_id = int(time.time())
+        
+        # 2. Asegurar que la descripción tenga formato adecuado
+        if not description.startswith("<b>"):
+            description = f"<b>{series_name}</b>\n\n{description}"
+        
+        # Si la descripción no incluye una sinopsis expandible, añadirla
+        if "<blockquote expandable>" not in description and "📝 <b>Sinopsis:</b>" not in description:
+            # Extraer o crear una sinopsis básica
+            synopsis = "Información no disponible"
+            if "Sinopsis:" in description:
+                synopsis_match = re.search(r'Sinopsis:(.*?)(?:\n\n|\Z)', description, re.DOTALL)
+                if synopsis_match:
+                    synopsis = synopsis_match.group(1).strip()
+            
+            # Reformatear la descripción
+            if "📝 <b>Sinopsis:</b>" not in description:
+                description = re.sub(
+                    r'Sinopsis:(.*?)(?:\n\n|\Z)', 
+                    r'📝 <b>Sinopsis:</b>\n<blockquote expandable>\1</blockquote>\n\n', 
+                    description, 
+                    flags=re.DOTALL
+                )
+            
+            # Asegurar que hay una marca de agua del canal
+            if "Multimedia-TV 📺" not in description:
+                description += f"\n\n🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
+        
+        # 3. Subir la portada al canal de búsqueda
+        await status_message.edit_text(
+            f"<blockquote>⏳ Subiendo portada de <b>{series_name}</b> al canal de búsqueda...</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        
+        sent_cover = await context.bot.send_photo(
+            chat_id=SEARCH_CHANNEL_ID,
+            photo=cover_photo,
+            caption=description,
+            parse_mode=ParseMode.HTML
+        )
+        
+        search_channel_cover_id = sent_cover.message_id
+        
+        # 4. Generar URL para el botón "Ver ahora"
+        view_url = f"https://t.me/MultimediaTVbot?start=multiseries_{series_id}"
+        
+        # 5. Crear un botón para la portada
+        keyboard = [
+            [InlineKeyboardButton("Ver ahora", url=view_url)]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # 6. Actualizar la portada en el canal de búsqueda con el botón
+        await context.bot.edit_message_reply_markup(
+            chat_id=SEARCH_CHANNEL_ID,
+            message_id=search_channel_cover_id,
+            reply_markup=reply_markup
+        )
+        
+        # 7. Procesar y subir cada temporada y sus capítulos
+        season_data = {}  # Para almacenar la información estructurada
+        
+        for season_name, episodes in valid_seasons.items():
+            await status_message.edit_text(
+                f"<blockquote>⏳ Procesando temporada <b>{season_name}</b>...</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+            
+            season_data[season_name] = []
+            
+            # Subir los capítulos de esta temporada en grupos para evitar timeout
+            episode_groups = [episodes[i:i+5] for i in range(0, len(episodes), 5)]
+            
+            for group_index, group in enumerate(episode_groups):
+                await status_message.edit_text(
+                    f"<blockquote>⏳ Subiendo capítulos de <b>{season_name}</b>... ({group_index*5+1}-{min((group_index+1)*5, len(episodes))}/{len(episodes)})</blockquote>",
+                    parse_mode=ParseMode.HTML
+                )
+                
+                for episode in group:
+                    # Enviar cada capítulo al canal de búsqueda
+                    try:
+                        original_message = await context.bot.copy_message(
+                            chat_id=SEARCH_CHANNEL_ID,
+                            from_chat_id=episode['chat_id'],
+                            message_id=episode['message_id'],
+                            disable_notification=True
+                        )
+                        
+                        # Guardar la información del capítulo subido
+                        season_data[season_name].append({
+                            'message_id': original_message.message_id,
+                            'episode_number': episode['episode_number']
+                        })
+                        
+                        # Pequeña pausa para evitar rate limiting
+                        await asyncio.sleep(0.5)
+                    except Exception as e:
+                        logger.error(f"Error copiando episodio al canal de búsqueda: {e}")
+                        await status_message.edit_text(
+                            f"<blockquote>⚠️ Error al subir capítulo {episode['episode_number']} de {season_name}. Continuando con el siguiente...</blockquote>",
+                            parse_mode=ParseMode.HTML
+                        )
+                        await asyncio.sleep(1)
+        
+        # 8. Subir portada al canal principal
+        await status_message.edit_text(
+            f"<blockquote>⏳ Subiendo portada al canal principal...</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        
+        try:
+            sent_cover_main = await context.bot.send_photo(
+                chat_id=CHANNEL_ID,
+                photo=cover_photo,
+                caption=description,
+                parse_mode=ParseMode.HTML
+            )
+            
+            # 9. Actualizar la portada en el canal principal con el botón
+            await context.bot.edit_message_reply_markup(
+                chat_id=CHANNEL_ID,
+                message_id=sent_cover_main.message_id,
+                reply_markup=reply_markup
+            )
+        except Exception as e:
+            logger.error(f"Error enviando portada al canal principal: {e}")
+            await status_message.edit_text(
+                f"<blockquote>⚠️ Error al enviar portada al canal principal, pero la serie ya está en el canal de búsqueda.</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+        
+        # 10. Guardar toda la información en la base de datos
+        await status_message.edit_text(
+            f"<blockquote>⏳ Guardando información en la base de datos...</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        
+        try:
+            # Guardar la serie principal
+            db.execute(
+                "INSERT INTO multi_series (series_id, title, description, cover_message_id, added_by, added_date) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (series_id, series_name, description, search_channel_cover_id, update.effective_user.id, datetime.now())
+            )
+            
+            # Guardar cada temporada
+            for season_name, episodes in season_data.items():
+                # Generar un ID único para la temporada
+                season_id = int(f"{series_id}{hash(season_name) % 10000:04d}")
+                
+                db.execute(
+                    "INSERT INTO seasons (season_id, series_id, season_name, added_date) VALUES (?, ?, ?, ?)",
+                    (season_id, series_id, season_name, datetime.now())
+                )
+                
+                # Guardar cada episodio de la temporada
+                for episode in episodes:
+                    db.execute(
+                        "INSERT INTO season_episodes (season_id, episode_number, message_id) VALUES (?, ?, ?)",
+                        (season_id, episode['episode_number'], episode['message_id'])
+                    )
+            
+        except Exception as db_error:
+            logger.error(f"Error guardando en la base de datos: {db_error}")
+            await status_message.edit_text(
+                f"<blockquote>⚠️ La serie se ha subido a los canales pero hubo un problema al guardarla en la base de datos: {str(db_error)[:100]}</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+            return
+        
+        # 11. Reiniciar el estado
+        context.user_data['multi_state'] = MULTI_SEASONS_STATE_IDLE
+        context.user_data.pop('multi_seasons', None)
+        
+        # 12. Informar al administrador del éxito
+        total_episodes = sum(len(eps) for eps in season_data.values())
+        await status_message.edit_text(
+            f"<blockquote>✅ Serie <b>{series_name}</b> completada exitosamente\n\n"
+            f"📊 Detalles:\n"
+            f"- Temporadas: {len(season_data)}\n"
+            f"- Total de capítulos: {total_episodes}\n"
+            f"- Subida a canal principal: ✓\n"
+            f"- Subida a canal de búsqueda: ✓\n"
+            f"- ID de la serie: {series_id}\n\n"
+            f"Los usuarios pueden acceder a través del botón 'Ver ahora'.</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        
+    except Exception as e:
+        logger.error(f"Error en finalize_multi_seasons_upload: {e}")
+        await status_message.edit_text(
+            f"<blockquote>❌ Error al procesar la serie: {str(e)[:100]}</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+
+async def handle_multi_series_request(update: Update, context: ContextTypes.DEFAULT_TYPE, series_id: int) -> None:
+    """Manejar la solicitud de visualización de una serie con múltiples temporadas"""
+    user_id = update.effective_user.id
+    user_data = db.get_user(user_id)
+    
+    # Verificar límites de búsqueda
+    if not db.increment_daily_usage(user_id):
+        # Mostrar mensaje de límite excedido y opciones de planes
+        keyboard = []
+        for plan_id, plan in PLANS_INFO.items():
+            if plan_id != 'basic':
+                keyboard.append([
+                    InlineKeyboardButton(
+                        f"{plan['name']} - {plan['price']}",
+                        callback_data=f"buy_plan_{plan_id}"
+                    )
+                ])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            "❌ Has alcanzado tu límite de búsquedas diarias.\n\n"
+            "<blockquote>Para continuar viendo series, adquiere un plan premium:</blockquote>",
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.HTML
+        )
+        return
+    
+    # Mostrar acción de escribiendo
+    await context.bot.send_chat_action(
+        chat_id=update.effective_chat.id,
+        action=ChatAction.TYPING
+    )
+    
+    try:
+        # Obtener datos de la serie multi-temporada
+        series = db.execute(
+            "SELECT * FROM multi_series WHERE series_id = ?", 
+            (series_id,)
+        ).fetchone()
+        
+        if not series:
+            await update.message.reply_text(
+                "❌ Serie no encontrada. Es posible que haya sido eliminada o que el enlace sea incorrecto.",
+                parse_mode=ParseMode.HTML
+            )
+            return
+        
+        # Obtener las temporadas de la serie
+        seasons = db.execute(
+            "SELECT * FROM seasons WHERE series_id = ? ORDER BY season_name",
+            (series_id,)
+        ).fetchall()
+        
+        if not seasons:
+            await update.message.reply_text(
+                "❌ Esta serie no tiene temporadas disponibles actualmente.",
+                parse_mode=ParseMode.HTML
+            )
+            return
+        
+        # Obtener cover_message_id
+        cover_message_id = series['cover_message_id']
+        
+        # Enviar portada
+        await context.bot.copy_message(
+            chat_id=update.effective_chat.id,
+            from_chat_id=SEARCH_CHANNEL_ID,
+            message_id=cover_message_id
+        )
+        
+        # Crear botones para las temporadas
+        keyboard = []
+        
+        # Añadir un botón para cada temporada, organizados en filas de 2
+        for i in range(0, len(seasons), 2):
+            row = []
+            for j in range(i, min(i + 2, len(seasons))):
+                season = seasons[j]
+                row.append(
+                    InlineKeyboardButton(
+                        f"{season['season_name']}",
+                        callback_data=f"season_{season['season_id']}"
+                    )
+                )
+            keyboard.append(row)
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # Enviar mensaje con botones
+        await update.message.reply_text(
+            f"📺 <b>{series['title']}</b>\n\n"
+            f"Selecciona una temporada para ver sus capítulos:",
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.HTML
+        )
+        
+    except Exception as e:
+        logger.error(f"Error en handle_multi_series_request: {e}")
+        await update.message.reply_text(
+            f"❌ Error al mostrar la serie: {str(e)[:100]}\n\n"
+            f"Por favor, intenta más tarde.",
+            parse_mode=ParseMode.HTML
+        )
+
+async def handle_season_selection(query, context, season_id):
+    """Manejar la selección de una temporada"""
+    user_id = query.from_user.id
+    
+    await query.answer("Cargando capítulos...")
+    
+    try:
+        # Obtener información de la temporada
+        season = db.execute(
+            "SELECT * FROM seasons WHERE season_id = ?",
+            (season_id,)
+        ).fetchone()
+        
+        if not season:
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text="❌ Temporada no encontrada.",
+                parse_mode=ParseMode.HTML
+            )
+            return
+        
+                # Obtener capítulos de la temporada
+        episodes = db.execute(
+            "SELECT * FROM season_episodes WHERE season_id = ? ORDER BY episode_number",
+            (season_id,)
+        ).fetchall()
+        
+        if not episodes:
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text="❌ Esta temporada no tiene capítulos disponibles.",
+                parse_mode=ParseMode.HTML
+            )
+            return
+        
+        # Obtener el series_id para el botón de volver
+        series_id = season['series_id']
+        
+        # Crear botones para los capítulos
+        keyboard = []
+        
+        # Añadir botones para cada capítulo, organizados en filas de 3
+        for i in range(0, len(episodes), 3):
+            row = []
+            for j in range(i, min(i + 3, len(episodes))):
+                episode = episodes[j]
+                row.append(
+                    InlineKeyboardButton(
+                        f"Capítulo {episode['episode_number']}",
+                        callback_data=f"multi_ep_{episode['message_id']}"
+                    )
+                )
+            keyboard.append(row)
+        
+        # Añadir botón para enviar todos los capítulos
+        keyboard.append([
+            InlineKeyboardButton(
+                "Enviar todos los capítulos",
+                callback_data=f"multi_ep_all_{season_id}"
+            )
+        ])
+        
+        # Añadir botón para volver a la lista de temporadas
+        keyboard.append([
+            InlineKeyboardButton(
+                "Volver a temporadas ↩️",
+                callback_data=f"back_to_seasons_{series_id}"
+            )
+        ])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # Enviar mensaje con botones
+        await query.edit_message_text(
+            f"📺 <b>{season['season_name']}</b>\n\n"
+            f"Selecciona un capítulo para ver o solicita todos los capítulos:",
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.HTML
+        )
+        
+    except Exception as e:
+        logger.error(f"Error en handle_season_selection: {e}")
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=f"❌ Error al mostrar los capítulos: {str(e)[:100]}",
+            parse_mode=ParseMode.HTML
+        )
+
+async def handle_back_to_seasons(query, context, series_id):
+    """Manejar el botón de volver a las temporadas"""
+    await query.answer("Volviendo a temporadas...")
+    
+    try:
+        # Obtener datos de la serie
+        series = db.execute(
+            "SELECT * FROM multi_series WHERE series_id = ?", 
+            (series_id,)
+        ).fetchone()
+        
+        if not series:
+            await query.edit_message_text(
+                "❌ Serie no encontrada.",
+                parse_mode=ParseMode.HTML
+            )
+            return
+        
+        # Obtener las temporadas de la serie
+        seasons = db.execute(
+            "SELECT * FROM seasons WHERE series_id = ? ORDER BY season_name",
+            (series_id,)
+        ).fetchall()
+        
+        if not seasons:
+            await query.edit_message_text(
+                "❌ Esta serie no tiene temporadas disponibles.",
+                parse_mode=ParseMode.HTML
+            )
+            return
+        
+        # Crear botones para las temporadas
+        keyboard = []
+        
+        # Añadir un botón para cada temporada, organizados en filas de 2
+        for i in range(0, len(seasons), 2):
+            row = []
+            for j in range(i, min(i + 2, len(seasons))):
+                season = seasons[j]
+                row.append(
+                    InlineKeyboardButton(
+                        f"{season['season_name']}",
+                        callback_data=f"season_{season['season_id']}"
+                    )
+                )
+            keyboard.append(row)
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # Editar mensaje con botones
+        await query.edit_message_text(
+            f"📺 <b>{series['title']}</b>\n\n"
+            f"Selecciona una temporada para ver sus capítulos:",
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.HTML
+        )
+        
+    except Exception as e:
+        logger.error(f"Error en handle_back_to_seasons: {e}")
+        await query.edit_message_text(
+            f"❌ Error al mostrar las temporadas: {str(e)[:100]}",
+            parse_mode=ParseMode.HTML
+        )
+
+async def send_multi_episode(query, context, message_id):
+    """Enviar un capítulo específico de una serie multi-temporada"""
+    user_id = query.from_user.id
+    user_data = db.get_user(user_id)
+    can_forward = user_data and user_data.get('can_forward', False)
+    
+    await query.answer("Procesando tu solicitud...")
+    
+    # Mostrar acción de escribiendo
+    await context.bot.send_chat_action(
+        chat_id=query.message.chat_id,
+        action=ChatAction.TYPING
+    )
+    
+    try:
+        # Enviar el capítulo
+        await context.bot.copy_message(
+            chat_id=query.message.chat_id,
+            from_chat_id=SEARCH_CHANNEL_ID,
+            message_id=message_id,
+            protect_content=not can_forward  # Proteger según el plan
+        )
+        
+        # Marcar el botón como seleccionado
+        keyboard = query.message.reply_markup.inline_keyboard
+        new_keyboard = []
+        
+        for row in keyboard:
+            new_row = []
+            for button in row:
+                if button.callback_data == query.data:
+                    # Marcar este botón como seleccionado
+                    new_row.append(InlineKeyboardButton(
+                        f"✅ {button.text}",
+                        callback_data=button.callback_data
+                    ))
+                else:
+                    new_row.append(button)
+            new_keyboard.append(new_row)
+        
+        # Actualizar el mensaje con el nuevo teclado
+        await query.edit_message_reply_markup(
+            reply_markup=InlineKeyboardMarkup(new_keyboard)
+        )
+        
+    except Exception as e:
+        logger.error(f"Error enviando capítulo multi-serie: {e}")
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=f"❌ Error al enviar el capítulo: {str(e)[:100]}",
+            parse_mode=ParseMode.HTML
+        )
+
+async def send_all_multi_episodes(query, context, season_id):
+    """Enviar todos los capítulos de una temporada"""
+    user_id = query.from_user.id
+    user_data = db.get_user(user_id)
+    can_forward = user_data and user_data.get('can_forward', False)
+    
+    await query.answer("Enviando todos los capítulos...")
+    
+    # Mostrar acción de escribiendo
+    await context.bot.send_chat_action(
+        chat_id=query.message.chat_id,
+        action=ChatAction.TYPING
+    )
+    
+    try:
+        # Obtener todos los capítulos de la temporada
+        episodes = db.execute(
+            "SELECT * FROM season_episodes WHERE season_id = ? ORDER BY episode_number",
+            (season_id,)
+        ).fetchall()
+        
+        if not episodes:
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text="❌ No se encontraron capítulos para esta temporada.",
+                parse_mode=ParseMode.HTML
+            )
+            return
+        
+        # Obtener el nombre de la temporada
+        season = db.execute(
+            "SELECT season_name FROM seasons WHERE season_id = ?",
+            (season_id,)
+        ).fetchone()
+        season_name = season['season_name'] if season else "Temporada"
+        
+        # Enviar mensaje de inicio
+        status_message = await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=f"⏳ Enviando {len(episodes)} capítulos de <b>{season_name}</b>... Por favor, espera.",
+            parse_mode=ParseMode.HTML
+        )
+        
+        # Enviar cada capítulo
+        for i, episode in enumerate(episodes):
+            try:
+                # Actualizar estado periódicamente
+                if i % 5 == 0 and i > 0:
+                    await status_message.edit_text(
+                        f"⏳ Enviando capítulos... ({i}/{len(episodes)})",
+                        parse_mode=ParseMode.HTML
+                    )
+                
+                # Enviar capítulo
+                await context.bot.copy_message(
+                    chat_id=query.message.chat_id,
+                    from_chat_id=SEARCH_CHANNEL_ID,
+                    message_id=episode['message_id'],
+                    protect_content=not can_forward,  # Proteger según el plan
+                    disable_notification=(i < len(episodes) - 1)  # Solo notificar el último
+                )
+                
+                # Pequeña pausa para no sobrecargar
+                await asyncio.sleep(0.5)
+                
+            except Exception as e:
+                logger.error(f"Error enviando capítulo {i+1} de temporada multi-serie: {e}")
+                continue
+        
+        # Actualizar mensaje de estado
+        await status_message.edit_text(
+            f"✅ Se han enviado todos los capítulos de <b>{season_name}</b> ({len(episodes)}).",
+            parse_mode=ParseMode.HTML
+        )
+        
+        # Marcar el botón como seleccionado
+        keyboard = query.message.reply_markup.inline_keyboard
+        new_keyboard = []
+        
+        for row in keyboard:
+            new_row = []
+            for button in row:
+                if button.callback_data == query.data:
+                    # Marcar este botón como seleccionado
+                    new_row.append(InlineKeyboardButton(
+                        f"✅ {button.text}",
+                        callback_data=button.callback_data
+                    ))
+                else:
+                    new_row.append(button)
+            new_keyboard.append(new_row)
+        
+        # Actualizar el mensaje con el nuevo teclado
+        await query.edit_message_reply_markup(
+            reply_markup=InlineKeyboardMarkup(new_keyboard)
+        )
+        
+    except Exception as e:
+        logger.error(f"Error general enviando todos los capítulos de temporada multi-serie: {e}")
+        await context.bot.send_message(
+            chat_id=query.message.chat_id,
+            text=f"❌ Error al enviar los capítulos: {str(e)[:100]}",
             parse_mode=ParseMode.HTML
         )
 
@@ -4408,6 +5338,50 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         await verify_channel_membership(update, context)
         return
     
+    # Manejar selección de temporada en series multi-temporada
+    if data.startswith("season_"):
+        try:
+            season_id = int(data.replace("season_", ""))
+            await handle_season_selection(query, context, season_id)
+            return
+        except Exception as e:
+            logger.error(f"Error procesando selección de temporada: {e}")
+            await query.answer(f"Error: {str(e)[:200]}")
+            return
+    
+    # Manejar botón de volver a temporadas
+    if data.startswith("back_to_seasons_"):
+        try:
+            series_id = int(data.replace("back_to_seasons_", ""))
+            await handle_back_to_seasons(query, context, series_id)
+            return
+        except Exception as e:
+            logger.error(f"Error procesando botón volver: {e}")
+            await query.answer(f"Error: {str(e)[:200]}")
+            return
+    
+    # Manejar solicitudes de capítulos de series multi-temporada
+    if data.startswith("multi_ep_") and not data.startswith("multi_ep_all_"):
+        try:
+            message_id = int(data.replace("multi_ep_", ""))
+            await send_multi_episode(query, context, message_id)
+            return
+        except Exception as e:
+            logger.error(f"Error procesando solicitud de capítulo multi-serie: {e}")
+            await query.answer(f"Error: {str(e)[:200]}")
+            return
+    
+    # Manejar solicitud de todos los capítulos de una temporada
+    if data.startswith("multi_ep_all_"):
+        try:
+            season_id = int(data.replace("multi_ep_all_", ""))
+            await send_all_multi_episodes(query, context, season_id)
+            return
+        except Exception as e:
+            logger.error(f"Error procesando solicitud de todos los capítulos: {e}")
+            await query.answer(f"Error: {str(e)[:200]}")
+            return
+    
     # Manejar solicitudes de capítulos individuales
     if data.startswith("ep_") and not data.startswith("ep_all_"):
         try:
@@ -4617,6 +5591,8 @@ def main() -> None:
     application.add_handler(CommandHandler("search", search_content))
     application.add_handler(CommandHandler("imdb", imdb_command))
     application.add_handler(CommandHandler("plan", set_user_plan))
+    application.add_handler(CommandHandler("a", a_command))
+    application.add_handler(CommandHandler("cancelmulti", cancel_multi_command))
     application.add_handler(CommandHandler("load", load_command))
     application.add_handler(CommandHandler("upser", upser_command))
     application.add_handler(CommandHandler("cancelupser", cancel_upser_command))
@@ -4666,6 +5642,11 @@ def main() -> None:
         handle_upser_input,
         # Este manejador debe ejecutarse después de otros manejadores más específicos
     ), group=-5)
+    
+    application.add_handler(MessageHandler(
+        (filters.PHOTO | filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND,
+        handle_multi_seasons_input,
+    ), group=-4)  # Prioridad media
     
     # Add message handler for direct text searches
     application.add_handler(MessageHandler(
