@@ -597,17 +597,39 @@ class Database:
     def add_season(self, season_id, series_id, season_name):
         """Añadir una temporada a una serie"""
         try:
-            season_data = {
-                'season_id': season_id,
-                'series_id': series_id,
-                'season_name': season_name,
-                'added_date': datetime.now()
-            }
-            self.db.seasons.insert_one(season_data)
+            # Convertir IDs a enteros para garantizar consistencia
+            season_id = int(season_id)
+            series_id = int(series_id)
+            
+            # Verificar si ya existe una temporada con este ID
+            existing_season = self.db.seasons.find_one({'season_id': season_id})
+            if existing_season:
+                # Ya existe, actualizamos en lugar de insertar
+                self.db.seasons.update_one(
+                    {'season_id': season_id},
+                    {'$set': {
+                        'series_id': series_id,
+                        'season_name': season_name,
+                        'updated_date': datetime.now()
+                    }}
+                )
+                logger.info(f"Temporada actualizada: {season_id} - {season_name}")
+            else:
+                # No existe, insertamos nueva temporada
+                season_data = {
+                    'season_id': season_id,
+                    'series_id': series_id,
+                    'season_name': season_name,
+                    'added_date': datetime.now()
+                }
+                self.db.seasons.insert_one(season_data)
+                logger.info(f"Nueva temporada añadida: {season_id} - {season_name}")
+            
             return season_id
         except Exception as e:
-            logger.error(f"Error al añadir temporada: {e}")
-            return None
+            logger.error(f"Error en add_season: {e}")
+            # Re-lanzar la excepción para manejarla en niveles superiores
+            raise
 
     def add_season_episode(self, season_id, episode_number, message_id):
         """Añadir un episodio a una temporada"""
