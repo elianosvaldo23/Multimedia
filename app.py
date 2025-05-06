@@ -1505,139 +1505,108 @@ async def migrate_episodes_process(update, context, status_message, source_seaso
 
 async def handle_multi_series_request(update: Update, context: ContextTypes.DEFAULT_TYPE, series_id: int) -> None:
     """Manejar la solicitud de visualización de una serie con múltiples temporadas"""
-    user_id = update.effective_user.id
-    user_data = db.get_user(user_id)
-    
-    # Verificar límites de búsqueda
-    if not db.increment_daily_usage(user_id):
-        # Mostrar mensaje de límite excedido y opciones de planes
-        keyboard = []
-        for plan_id, plan in PLANS_INFO.items():
-            if plan_id != 'basic':
-                keyboard.append([
-                    InlineKeyboardButton(
-                        f"{plan['name']} - {plan['price']}",
-                        callback_data=f"buy_plan_{plan_id}"
-                    )
-                ])
-        
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await update.message.reply_text(
-            "❌ Has alcanzado tu límite de búsquedas diarias.\n\n"
-            "<blockquote>Para continuar viendo series, adquiere un plan premium:</blockquote>",
-            reply_markup=reply_markup,
-            parse_mode=ParseMode.HTML
-        )
-        return
-    
-    # Mostrar acción de escribiendo
-    await context.bot.send_chat_action(
-        chat_id=update.effective_chat.id,
-        action=ChatAction.TYPING
-    )
-    
     try:
+        # Convertir series_id a int y registrar para debug
+        series_id = int(series_id)
+        logger.info(f"Procesando solicitud para series_id: {series_id}")
+
         # Obtener datos de la serie multi-temporada
         series = db.get_multi_series(series_id)
-        
         if not series:
             await update.message.reply_text(
-                "❌ Serie no encontrada. Es posible que haya sido eliminada o que el enlace sea incorrecto.",
+                "❌ Serie no encontrada. Es posible que haya sido eliminada.",
                 parse_mode=ParseMode.HTML
             )
             return
+
+        # Obtener todas las temporadas directamente de la base de datos
+        seasons_cursor = db.db.seasons.find({'series_id': series_id})
+        all_seasons = list(seasons_cursor)
         
-        # Convertir series_id a int para asegurar la comparación correcta
-        series_id = int(series_id)
-        
-        # Obtener las temporadas de la serie directamente de la colección seasons
-        all_seasons = list(db.db.seasons.find({'series_id': series_id}))
-        
-        # Registrar para depuración
-        logger.info(f"Series ID: {series_id}, Tipo: {type(series_id)}")
-        logger.info(f"Temporadas encontradas: {len(all_seasons)}")
-        
+        # Debug: mostrar todas las temporadas encontradas
+        logger.info(f"Total de temporadas encontradas en DB: {len(all_seasons)}")
+        for season in all_seasons:
+            logger.info(f"Temporada encontrada: ID={season['season_id']}, Nombre={season['season_name']}")
+
         if not all_seasons:
             await update.message.reply_text(
-                f"❌ Esta serie (ID: {series_id}) no tiene temporadas disponibles actualmente.",
+                f"❌ Esta serie no tiene temporadas disponibles.",
                 parse_mode=ParseMode.HTML
             )
             return
-        
-        # Filtrar temporadas que realmente tengan capítulos
+
+        # Obtener episodios para cada temporada y filtrar las que tienen episodios
         seasons_with_episodes = []
         for season in all_seasons:
             season_id = season['season_id']
             episodes = list(db.db.season_episodes.find({'season_id': season_id}))
-            if episodes and len(episodes) > 0:
-                # Añadir también el conteo de episodios para mostrarlo
+            if episodes:
                 season['episode_count'] = len(episodes)
                 seasons_with_episodes.append(season)
                 logger.info(f"Temporada {season['season_name']}: {len(episodes)} episodios")
-        
+
         if not seasons_with_episodes:
             await update.message.reply_text(
-                "❌ Esta serie no tiene capítulos disponibles actualmente.",
+                "❌ No se encontraron capítulos para ninguna temporada.",
                 parse_mode=ParseMode.HTML
             )
             return
-        
-        # Ordenar temporadas para una mejor visualización
-        # Intentar extraer número de temporada para ordenar numéricamente
+
+        # Ordenar temporadas numéricamente
         for season in seasons_with_episodes:
-            match = re.search(r'temporada\s*(\d+)', season['season_name'].lower())
-            if match:
-                season['temp_num'] = int(match.group(1))
-            else:
-                season['temp_num'] = 999  # Para temporadas sin número explícito
-        
+            try:
+                # Intentar extraer el número de temporada del nombre
+                match = re.search(r'temporada\s*(\d+)', season['season_name'].lower())
+                if match:
+                    season['sort_num'] = int(match.group(1))
+                else:
+                    season['sort_num'] = 999
+            except Exception as e:
+                logger.error(f"Error al extraer número de temporada: {e}")
+                season['sort_num'] = 999
+
         # Ordenar por número de temporada
-        seasons_with_episodes.sort(key=lambda x: x.get('temp_num', 999))
-        
-        # Obtener cover_message_id
+        seasons_with_episodes.sort(key=lambda x: x.get('sort_num', 999))
+
+        # Enviar la portada
         cover_message_id = series['cover_message_id']
-        
-        # Enviar portada
         await context.bot.copy_message(
             chat_id=update.effective_chat.id,
             from_chat_id=SEARCH_CHANNEL_ID,
             message_id=cover_message_id
         )
-        
+
         # Crear botones para las temporadas
         keyboard = []
-        
-        # Añadir un botón para cada temporada, organizados en filas de 2
         for i in range(0, len(seasons_with_episodes), 2):
             row = []
-            for j in range(i, min(i + 2, len(seasons_with_episodes))):
-                season = seasons_with_episodes[j]
-                # Añadir conteo de episodios al nombre del botón
+            # Tomar hasta 2 temporadas para cada fila
+            slice_end = min(i + 2, len(seasons_with_episodes))
+            for season in seasons_with_episodes[i:slice_end]:
                 button_text = f"{season['season_name']} ({season.get('episode_count', 0)} caps)"
                 row.append(
                     InlineKeyboardButton(
-                        button_text,
+                        text=button_text,
                         callback_data=f"season_{season['season_id']}"
                     )
                 )
             keyboard.append(row)
-        
+
         reply_markup = InlineKeyboardMarkup(keyboard)
-        
+
         # Enviar mensaje con botones
         await update.message.reply_text(
-            f"📺 <b>{series['title']}</b> - {len(seasons_with_episodes)} temporadas\n\n"
+            f"📺 <b>{series['title']}</b>\n\n"
+            f"Se encontraron {len(seasons_with_episodes)} temporadas disponibles.\n"
             f"Selecciona una temporada para ver sus capítulos:",
             reply_markup=reply_markup,
             parse_mode=ParseMode.HTML
         )
-        
+
     except Exception as e:
         logger.error(f"Error en handle_multi_series_request: {e}")
         await update.message.reply_text(
-            f"❌ Error al mostrar la serie: {str(e)[:100]}\n\n"
-            f"Por favor, intenta más tarde.",
+            "❌ Error al mostrar las temporadas. Por favor, intenta más tarde.",
             parse_mode=ParseMode.HTML
         )
         
