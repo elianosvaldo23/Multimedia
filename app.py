@@ -4107,29 +4107,23 @@ async def send_additional_messages(context, chat_id, msg_id, can_forward):
         # Generar URL para compartir
         view_url = f"https://t.me/MultimediaTVbot?start=content_{msg_id}"
 
-        # Enviar mensaje con botón de compartir
+        # Crear el botón de compartir
         share_keyboard = [
             [InlineKeyboardButton("Compartir 🔗", url=f"https://t.me/share/url?url={view_url}&text=¡Mira%20este%20contenido%20en%20MultimediaTV!")]
         ]
         share_markup = InlineKeyboardMarkup(share_keyboard)
 
-        # Primer mensaje con botón de compartir
-        await context.bot.send_message(
-            chat_id=chat_id,
-            text="¿Te gusta este contenido?\n<blockquote>Compártelo con tus amigos y familiares</blockquote>",
-            reply_markup=share_markup,
-            parse_mode=ParseMode.HTML
-        )
-
-        # Segundo mensaje con información de planes
+        # Enviar mensaje con toda la información y el botón de compartir
         await context.bot.send_message(
             chat_id=chat_id,
             text="📌 Muchas gracias por Preferirnos\n\n"
-                 "<blockquote expandable>En caso de que no puedas reenviar ni guardar el archivo en tu teléfono, "
+                 "En caso de que no puedas reenviar ni guardar el archivo en tu teléfono, "
                  "quiere decir que no tienes un plan comprado. Por lo cual te recomiendo "
-                 "que adquieras los planes Medio o Ultra que le dan estas posibilidades.\n\n</blockquote>"
+                 "que adquieras los planes Medio o Ultra que le dan estas posibilidades.\n\n"
                  "◈ Nota\n"
-                 "<blockquote expandable>Adquiere un Plan y disfruta de todas las opciones</blockquote>",
+                 "<blockquote expandable>Adquiere un Plan y disfruta de todas las opciones</blockquote>\n\n"
+                 "Comparte con tus familiares y amigos el contenido anterior ☝️",
+            reply_markup=share_markup,
             parse_mode=ParseMode.HTML
         )
     except Exception as e:
@@ -4180,7 +4174,7 @@ async def handle_send_callback(query, context, msg_id):
                 except Exception as e:
                     logger.error(f"Error añadiendo botón 'Ver ahora': {e}")
 
-                # Enviar mensajes adicionales después de la serie
+                # Enviar mensaje adicional
                 await send_additional_messages(context, query.message.chat_id, msg_id, can_forward)
 
             else:
@@ -4213,7 +4207,7 @@ async def handle_send_callback(query, context, msg_id):
                         parse_mode=ParseMode.HTML
                     )
 
-                    # Enviar mensajes adicionales después del episodio
+                    # Enviar mensaje adicional
                     await send_additional_messages(context, query.message.chat_id, msg_id, can_forward)
 
                 else:
@@ -4228,7 +4222,7 @@ async def handle_send_callback(query, context, msg_id):
                         protect_content=not can_forward
                     )
 
-                    # Enviar mensajes adicionales después de la película
+                    # Enviar mensaje adicional
                     await send_additional_messages(context, query.message.chat_id, msg_id, can_forward)
 
             # Answer the callback query
