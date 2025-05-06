@@ -180,6 +180,44 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         
     user = update.effective_user
     
+    # Comprobar si es una solicitud de contenido específico
+    if context.args and context.args[0].startswith('content_'):
+        try:
+            content_id = int(context.args[0].replace('content_', ''))
+            user_data = db.get_user(user.id)
+            can_forward = user_data and user_data.get('can_forward', False)
+            
+            # Mostrar acción de escribiendo mientras se procesa
+            await context.bot.send_chat_action(
+                chat_id=update.message.chat_id,
+                action=ChatAction.TYPING
+            )
+            
+            try:
+                # Copiar el mensaje con los permisos adecuados
+                await context.bot.copy_message(
+                    chat_id=update.message.chat_id,
+                    from_chat_id=SEARCH_CHANNEL_ID,
+                    message_id=content_id,
+                    protect_content=not can_forward
+                )
+                
+                # Incrementar contador de búsquedas diarias
+                db.increment_daily_usage(user.id)
+                
+                return  # Salir de la función después de enviar el contenido
+                
+            except Exception as e:
+                logger.error(f"Error al enviar contenido específico: {e}")
+                await update.message.reply_text(
+                    "❌ No se pudo cargar el contenido solicitado. Es posible que ya no esté disponible.",
+                    parse_mode=ParseMode.HTML
+                )
+                return
+        except (ValueError, IndexError) as e:
+            logger.error(f"Error procesando content_id: {e}")
+            # Continuar con el flujo normal de start si falla.
+    
     # Comprobar si es una solicitud de serie con múltiples temporadas
     if context.args and context.args[0].startswith('multiseries_'):
         try:
@@ -2937,12 +2975,9 @@ async def finalize_current_content(update, context):
                 f"🎬 <b>Director:</b> {imdb_info.get('directors', 'No disponible')}\n"
                 f"👥 <b>Reparto:</b> {imdb_info.get('cast', 'No disponible')}\n\n"
                 f"📝 <b>Sinopsis:</b>\n<blockquote>{imdb_info.get('plot', 'No disponible')}</blockquote>\n\n"
-                f"<blockquote>🎬 <b>📌 Canal Principal 📌</b>\n</blockquote>"
 				f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
             )
             
-            if imdb_info.get('url'):
-                description += f"🔗 <a href='{imdb_info['url']}'>Ver en IMDb</a>"
         else:
             description = (
                 f"<b>{current_content['title']}</b>\n\n"
@@ -3211,8 +3246,6 @@ async def process_load_queue(update, context):
                     f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
                     )
                     
-                    if imdb_info.get('url'):
-                        description += f"🔗 <a href='{imdb_info['url']}'>Ver en IMDb</a>"
                 else:
                     # Crear descripción básica si no hay información
                     description = (
