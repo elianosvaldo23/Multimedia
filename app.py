@@ -318,9 +318,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         parse_mode=ParseMode.HTML
     )
     
-async def send_content_message(chat_id, context):
+async def send_content_message(chat_id, context, msg_id):
     """Envía el mensaje estándar después de enviar contenido"""
     try:
+        # Generar URL para compartir
+        view_url = f"https://t.me/MultimediaTVbot?start=content_{msg_id}"
+
+        # Crear el botón de compartir
+        share_keyboard = [
+            [InlineKeyboardButton("Compartir 🔗", url=f"https://t.me/share/url?url={view_url}&text=¡Mira%20este%20contenido%20en%20MultimediaTV!")]
+        ]
+        share_markup = InlineKeyboardMarkup(share_keyboard)
+        
         await context.bot.send_message(
             chat_id=chat_id,
             text="📌 Muchas gracias por Preferirnos\n\n"
