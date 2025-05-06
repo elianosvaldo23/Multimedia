@@ -2974,7 +2974,7 @@ async def finalize_current_content(update, context):
                 f"🎭 <b>Género:</b> {imdb_info.get('genres', 'No disponible')}\n"
                 f"🎬 <b>Director:</b> {imdb_info.get('directors', 'No disponible')}\n"
                 f"👥 <b>Reparto:</b> {imdb_info.get('cast', 'No disponible')}\n\n"
-                f"📝 <b>Sinopsis:</b>\n<blockquote>{imdb_info.get('plot', 'No disponible')}</blockquote>\n\n"
+                f"📝 <b>Sinopsis:</b>\n<blockquote expandable>{imdb_info.get('plot', 'No disponible')}</blockquote>\n\n"
 				f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
             )
             
@@ -4101,19 +4101,53 @@ async def send_search_results(update: Update, context: ContextTypes.DEFAULT_TYPE
             reply_markup=reply_markup
         )
 
+async def send_additional_messages(context, chat_id, msg_id, can_forward):
+    """Send additional messages after sending the main content."""
+    try:
+        # Generar URL para compartir
+        view_url = f"https://t.me/MultimediaTVbot?start=content_{msg_id}"
+
+        # Enviar mensaje con botón de compartir
+        share_keyboard = [
+            [InlineKeyboardButton("Compartir 🔗", url=f"https://t.me/share/url?url={view_url}&text=¡Mira%20este%20contenido%20en%20MultimediaTV!")]
+        ]
+        share_markup = InlineKeyboardMarkup(share_keyboard)
+
+        # Primer mensaje con botón de compartir
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="¿Te gusta este contenido?\n<blockquote>Compártelo con tus amigos y familiares</blockquote>",
+            reply_markup=share_markup,
+            parse_mode=ParseMode.HTML
+        )
+
+        # Segundo mensaje con información de planes
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="📌 Muchas gracias por Preferirnos\n\n"
+                 "<blockquote expandable>En caso de que no puedas reenviar ni guardar el archivo en tu teléfono, "
+                 "quiere decir que no tienes un plan comprado. Por lo cual te recomiendo "
+                 "que adquieras los planes Medio o Ultra que le dan estas posibilidades.\n\n</blockquote>"
+                 "◈ Nota\n"
+                 "<blockquote expandable>Adquiere un Plan y disfruta de todas las opciones</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+    except Exception as e:
+        logger.error(f"Error sending additional messages: {e}")
+
 async def handle_send_callback(query, context, msg_id):
     """Handle send content callback."""
     user_id = query.from_user.id
     user_data = db.get_user(user_id)
     can_forward = user_data and user_data.get('can_forward', False)
-    
+
     try:
         # Show typing action
         await context.bot.send_chat_action(
             chat_id=query.message.chat_id,
             action=ChatAction.TYPING
         )
-        
+
         try:
             # Primero, verificar si este mensaje pertenece a una serie
             series_info = db.find_series_by_cover_message_id(msg_id)
@@ -4121,7 +4155,7 @@ async def handle_send_callback(query, context, msg_id):
                 # Es un mensaje de portada de serie
                 series_id = series_info['series_id']
                 view_url = f"https://t.me/MultimediaTVbot?start=series_{series_id}"
-                
+
                 # Copiar mensaje con botón "Ver ahora"
                 message = await context.bot.copy_message(
                     chat_id=query.message.chat_id,
@@ -4129,13 +4163,13 @@ async def handle_send_callback(query, context, msg_id):
                     message_id=msg_id,
                     protect_content=not can_forward
                 )
-                
+
                 # Agregar el botón "Ver ahora"
                 keyboard = [
                     [InlineKeyboardButton("Ver ahora", url=view_url)]
                 ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
-                
+
                 try:
                     # Editar el mensaje enviado para añadir el botón
                     await context.bot.edit_message_reply_markup(
@@ -4148,12 +4182,12 @@ async def handle_send_callback(query, context, msg_id):
             else:
                 # Verificar si es un episodio de serie
                 episode_info = db.find_episode_by_message_id(msg_id)
-                
+
                 if episode_info:
                     # Es un episodio, obtener la serie
                     series_id = episode_info['series_id']
                     view_url = f"https://t.me/MultimediaTVbot?start=series_{series_id}"
-                    
+
                     # Enviar el episodio
                     await context.bot.copy_message(
                         chat_id=query.message.chat_id,
@@ -4161,13 +4195,13 @@ async def handle_send_callback(query, context, msg_id):
                         message_id=msg_id,
                         protect_content=not can_forward
                     )
-                    
+
                     # Enviar mensaje adicional con el botón para ver toda la serie
                     keyboard = [
                         [InlineKeyboardButton("Ver serie completa", url=view_url)]
                     ]
                     reply_markup = InlineKeyboardMarkup(keyboard)
-                    
+
                     await context.bot.send_message(
                         chat_id=query.message.chat_id,
                         text="<blockquote>✅ Para ver todos los episodios de esta serie, usa el botón:</blockquote>",
@@ -4177,32 +4211,35 @@ async def handle_send_callback(query, context, msg_id):
                 else:
                     # Es contenido normal (película u otro)
                     view_url = f"https://t.me/MultimediaTVbot?start=content_{msg_id}"
-                    
+
                     # Copiar mensaje
-                    message = await context.bot.copy_message(
+                    await context.bot.copy_message(
                         chat_id=query.message.chat_id,
                         from_chat_id=SEARCH_CHANNEL_ID,
                         message_id=msg_id,
                         protect_content=not can_forward
                     )
-                    
+
                     # Para usuarios que pueden reenviar contenido, ofrecer botón de compartir
                     if can_forward:
                         keyboard = [
                             [InlineKeyboardButton("Compartir 🔗", url=f"https://t.me/share/url?url={view_url}&text=¡Mira%20este%20contenido%20conmigo!")]
                         ]
                         share_markup = InlineKeyboardMarkup(keyboard)
-                        
+
                         await context.bot.send_message(
                             chat_id=query.message.chat_id,
-                            text="<blockquote>¿Te gustó el contenido? ¡Compártelo con tus amigos!</blockquote>",
+                            text="¿Te gusta este contenido?\n<blockquote>Compártelo con tus amigos y familiares</blockquote>",
                             reply_markup=share_markup,
                             parse_mode=ParseMode.HTML
                         )
-            
+
+            # Llamar a la función para enviar mensajes adicionales
+            await send_additional_messages(context, query.message.chat_id, msg_id, can_forward)
+
             # Answer the callback query
             await query.answer("Contenido enviado")
-            
+
             # Update the original message to show which content was selected
             keyboard = query.message.reply_markup.inline_keyboard
             new_keyboard = []
@@ -4218,7 +4255,7 @@ async def handle_send_callback(query, context, msg_id):
                     else:
                         new_row.append(button)
                 new_keyboard.append(new_row)
-            
+
             # Update the message with the new keyboard
             await query.edit_message_reply_markup(
                 reply_markup=InlineKeyboardMarkup(new_keyboard)
@@ -4230,7 +4267,7 @@ async def handle_send_callback(query, context, msg_id):
                 text=f"<blockquote>❌ Error al enviar el contenido: {str(e)[:100]}\n\nEs posible que el canal de búsqueda no esté accesible o que el mensaje ya no exista.</blockquote>",
                 parse_mode=ParseMode.HTML
             )
-    
+
     except Exception as e:
         logger.error(f"Error handling send callback: {e}")
         await query.answer(f"Error: {str(e)[:200]}")
