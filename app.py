@@ -317,6 +317,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         reply_markup=reply_markup,
         parse_mode=ParseMode.HTML
     )
+    
+async def send_content_message(chat_id, context):
+    """Envía el mensaje estándar después de enviar contenido"""
+    try:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="📌 Muchas gracias por Preferirnos\n\n"
+                 "<blockquote expandable>En caso de que no puedas reenviar ni guardar el archivo en tu teléfono, "
+                 "quiere decir que no tienes un plan comprado. Por lo cual te recomiendo "
+                 "que adquieras los planes Medio o Ultra que le dan estas posibilidades.\n\n</blockquote>"
+                 "◈ Nota\n"
+                 "<blockquote expandable>Adquiere un Plan y disfruta de todas las opciones\n\n</blockquote>"
+                 "Comparte con tus familiares y amigos el contenido anterior ☝️",
+            parse_mode=ParseMode.HTML
+        )
+    except Exception as e:
+        logger.error(f"Error sending content message: {e}")    
 
 async def handle_series_request(update: Update, context: ContextTypes.DEFAULT_TYPE, series_id: int) -> None:
     """Manejar la solicitud de visualización de una serie"""
@@ -4123,9 +4140,9 @@ async def send_additional_messages(context, chat_id, msg_id, can_forward):
         await context.bot.send_message(
             chat_id=chat_id,
             text="📌 Muchas gracias por Preferirnos\n\n"
-                 "En caso de que no puedas reenviar ni guardar el archivo en tu teléfono, "
+                 "<blockquote expandable>En caso de que no puedas reenviar ni guardar el archivo en tu teléfono, "
                  "quiere decir que no tienes un plan comprado. Por lo cual te recomiendo "
-                 "que adquieras los planes Medio o Ultra que le dan estas posibilidades.\n\n"
+                 "que adquieras los planes Medio o Ultra que le dan estas posibilidades.\n\n</blockquote>"
                  "◈ Nota\n"
                  "<blockquote expandable>Adquiere un Plan y disfruta de todas las opciones</blockquote>\n\n"
                  "Comparte con tus familiares y amigos el contenido anterior ☝️",
