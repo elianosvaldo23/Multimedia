@@ -4179,6 +4179,10 @@ async def handle_send_callback(query, context, msg_id):
                     )
                 except Exception as e:
                     logger.error(f"Error añadiendo botón 'Ver ahora': {e}")
+
+                # Enviar mensajes adicionales después de la serie
+                await send_additional_messages(context, query.message.chat_id, msg_id, can_forward)
+
             else:
                 # Verificar si es un episodio de serie
                 episode_info = db.find_episode_by_message_id(msg_id)
@@ -4208,6 +4212,10 @@ async def handle_send_callback(query, context, msg_id):
                         reply_markup=reply_markup,
                         parse_mode=ParseMode.HTML
                     )
+
+                    # Enviar mensajes adicionales después del episodio
+                    await send_additional_messages(context, query.message.chat_id, msg_id, can_forward)
+
                 else:
                     # Es contenido normal (película u otro)
                     view_url = f"https://t.me/MultimediaTVbot?start=content_{msg_id}"
@@ -4220,22 +4228,8 @@ async def handle_send_callback(query, context, msg_id):
                         protect_content=not can_forward
                     )
 
-                    # Para usuarios que pueden reenviar contenido, ofrecer botón de compartir
-                    if can_forward:
-                        keyboard = [
-                            [InlineKeyboardButton("Compartir 🔗", url=f"https://t.me/share/url?url={view_url}&text=¡Mira%20este%20contenido%20conmigo!")]
-                        ]
-                        share_markup = InlineKeyboardMarkup(keyboard)
-
-                        await context.bot.send_message(
-                            chat_id=query.message.chat_id,
-                            text="¿Te gusta este contenido?\n<blockquote>Compártelo con tus amigos y familiares</blockquote>",
-                            reply_markup=share_markup,
-                            parse_mode=ParseMode.HTML
-                        )
-
-            # Llamar a la función para enviar mensajes adicionales
-            await send_additional_messages(context, query.message.chat_id, msg_id, can_forward)
+                    # Enviar mensajes adicionales después de la película
+                    await send_additional_messages(context, query.message.chat_id, msg_id, can_forward)
 
             # Answer the callback query
             await query.answer("Contenido enviado")
@@ -4260,11 +4254,13 @@ async def handle_send_callback(query, context, msg_id):
             await query.edit_message_reply_markup(
                 reply_markup=InlineKeyboardMarkup(new_keyboard)
             )
+
         except Exception as e:
             logger.error(f"Error sending content: {e}")
             await context.bot.send_message(
                 chat_id=query.message.chat_id,
-                text=f"<blockquote>❌ Error al enviar el contenido: {str(e)[:100]}\n\nEs posible que el canal de búsqueda no esté accesible o que el mensaje ya no exista.</blockquote>",
+                text=f"<blockquote>❌ Error al enviar el contenido: {str(e)[:100]}\n\n"
+                     f"Es posible que el canal de búsqueda no esté accesible o que el mensaje ya no exista.</blockquote>",
                 parse_mode=ParseMode.HTML
             )
 
@@ -4528,20 +4524,20 @@ async def handle_payment_method(update: Update, context: ContextTypes.DEFAULT_TY
         if plan_type == "plan_pro":
             payment_info = (
                 f"<blockquote><b>Pago en CUP (Transferencia)</b>\n"
-                f"Precio: 169.99 CUP\n</blockquote>"
+                f"Precio: 150 CUP\n</blockquote>"
                 f"<blockquote><b>Pago en CUP (Saldo)</b>\n"
-                f"Precio: 189.99 CUP\n</blockquote>"
+                f"Precio: 180 CUP\n</blockquote>"
                 f"Detalles de pago:\n"
-                f"Número: 9205 1299 7736 4067\n"
-                f"Telef: 55068190\n\n"
+                f"Número: <code>9205 1299 7736 4067\n</code>"
+                f"Telef: <code>55068190\n\n</code>"
                 f"<blockquote>⚠️ Después de realizar el pago, mandar captura del pago a @osvaldo20032 para activar tu plan.</blockquote>"
             )
         elif plan_type == "plan_plus":
             payment_info = (
                 f"<blockquote><b>Pago en CUP (Transferencia)</b>\n"
-                f"Precio: 649.99 CUP\n</blockquote>"
+                f"Precio: 600 CUP\n</blockquote>"
                 f"<blockquote><b>Pago en CUP (Saldo)</b>\n"
-                f"Precio: 669.99 CUP\n</blockquote>"
+                f"Precio: 700 CUP\n</blockquote>"
                 f"Detalles de pago:\n"
                 f"Número: <code>9205 1299 7736 4067\n</code>"
                 f"Telef: <code>55068190\n\n</code>"
@@ -4550,9 +4546,9 @@ async def handle_payment_method(update: Update, context: ContextTypes.DEFAULT_TY
         elif plan_type == "plan_ultra":
             payment_info = (
                 f"<blockquote><b>Pago en CUP (Transferencia)</b>\n"
-                f"Precio: 1049.99 CUP\n</blockquote>"
+                f"Precio: 950 CUP\n</blockquote>"
                 f"<blockquote><b>Pago en CUP (Saldo)</b>\n"
-                f"Precio: 1089.99 CUP\n</blockquote>"
+                f"Precio: 1100 CUP\n</blockquote>"
                 f"Detalles de pago:\n"
                 f"Número: <code>9205 1299 7736 4067\n</code>"
                 f"Telef: <code>55068190\n\n</code>"
