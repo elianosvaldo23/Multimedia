@@ -203,7 +203,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 )
                 
                 # Añadir después de cada copy_message:
-                await send_content_message(update.message.chat_id, context)
+                await send_content_message(update.message.chat_id, context, content_id)
 
                 # Incrementar contador de búsquedas diarias
                 db.increment_daily_usage(user.id)
@@ -246,7 +246,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 )
                 
                 # Añadir después de cada copy_message:
-                await send_content_message(update.message.chat_id, context)
+                await send_content_message(update.message.chat_id, context, content_id)
 
                 # Incrementar contador de búsquedas diarias
                 db.increment_daily_usage(user.id)
