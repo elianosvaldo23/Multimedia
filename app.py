@@ -2936,7 +2936,7 @@ async def handle_load_content(update: Update, context: ContextTypes.DEFAULT_TYPE
             return
         
         # Determinar si esto es una serie basado en patrones en el nombre del archivo o caption
-        season_episode_pattern = re.search(r'S(\d+)E(\d+)|(\d+)x(\d+)', file_name or caption or '', re.IGNORECASE)
+        season_episode_pattern = re.search(r'S(\d+)E(\d+)|(\d+)x(\d+)', file_name or original_caption or '', re.IGNORECASE)
         
         if "#serie" in original_caption.lower() or "#series" in original_caption.lower() or season_episode_pattern:
             current_content['content_type'] = 'series'
@@ -2960,7 +2960,7 @@ async def handle_load_content(update: Update, context: ContextTypes.DEFAULT_TYPE
                 current_content['season_num'] = season_num
         
         # Limpiar caption de links y otros elementos
-        clean_caption = clean_content_metadata(caption)
+        clean_caption = clean_content_metadata(original_caption)
         
         # Obtener el nombre personalizado del administrador
         custom_filename = current_content.get('custom_filename', current_content.get('title', 'Sin título'))
@@ -3043,6 +3043,7 @@ async def handle_load_content(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         # Actualizar mensaje de estado
         await update_load_status_message(update, context)
+
 
 async def finalize_current_content(update, context):
     """Finalizar y procesar el contenido actual"""
