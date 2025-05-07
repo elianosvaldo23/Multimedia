@@ -4769,14 +4769,16 @@ async def handle_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     
     info_text = (
-        "Funcionamiento del bot:\n\n"
+        "🤖 Funcionamiento del bot:\n\n"
         "<b>Comandos:</b>\n"
-        "<code><b>/start</code></b> - Inicia el bot y envía el mensaje de bienvenida con los botones principales\n"
-        "<code><b>/search</code></b> [texto] - Busca películas o series\n"
-        "/pedido [año] [nombre] - Realiza una solicitud de contenido (ej: /pedido 2024 Avatar 3)\n"
-        "<code><b>/gift_code</code></b> [código] - Canjea un código de regalo para obtener un plan premium\n"
-        "<blockquote>Si la película o serie no se encuentra en el canal, el bot te permitirá hacer un pedido.\n\n"
-        "Búsquedas para usuarios sin plan premium: solo podrán realizar 3 búsquedas diarias, 1 pedido diario y no se les permitirá reenviar el video.</blockquote>"
+        "📎 <code>/start</code> - Inicia el bot y muestra el menú principal\n"
+        "🔍 <code>/search</code> [texto] - Busca películas o series\n"
+        "📝 <code>/pedido</code> [año] [nombre] - Realiza una solicitud de contenido (ej: /pedido 2024 Avatar 3)\n"
+        "🎁 <code>/gift_code</code> [código] - Canjea un código de regalo para obtener un plan premium\n\n"
+        "<blockquote>📌 Notas importantes:\n"
+        "• Si el contenido no se encuentra, podrás hacer un pedido\n"
+        "• Plan básico: 3 búsquedas y 1 pedido diario\n"
+        "• Sin plan premium, no podrás reenviar contenido</blockquote>"
     )
     
     # Create back button
