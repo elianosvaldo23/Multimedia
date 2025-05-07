@@ -2790,7 +2790,7 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
     )
     
     try:
-        # Buscar información en IMDb
+        # Buscar información en TMDB
         imdb_info = await search_imdb_info(content_name)
         
         # Inicializar el contenido actual
@@ -2804,16 +2804,12 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
             'custom_filename': content_name  # Usar el nombre exacto que el admin proporcionó
         }
         
-        # Actualizar tipo de contenido si IMDb lo indica
-        if imdb_info and 'is_series' in imdb_info:
-            current_content['content_type'] = 'series' if imdb_info['is_series'] else 'movie'
-        
         context.bot_data['current_content'] = current_content
         
         if not imdb_info:
             # No se encontró información
             await status_msg.edit_text(
-                f"<blockquote>⚠️ No se encontró información en IMDb para <b>{content_name}</b>.\n"
+                f"<blockquote>⚠️ No se encontró información en TMDB para <b>{content_name}</b>.\n"
                 f"Continuaremos con información básica.\n"
                 f"Los archivos que envíes se renombrarán como <b>{content_name}</b>.\n"
                 f"Ahora envía los archivos del contenido.</blockquote>",
@@ -2821,14 +2817,9 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
             )
         else:
             # Se encontró información, descargar póster si está disponible
-            content_type_info = f"<b>Tipo:</b> {imdb_info['content_type']}"
-            if imdb_info['is_series']:
-                content_type_info += f" | <b>Estado:</b> {imdb_info['series_status']} | {imdb_info['total_episodes']}"
-            
             await status_msg.edit_text(
                 f"<blockquote>✅ Información encontrada: <b>{imdb_info['title']} ({imdb_info['year']})</b>\n"
-                f"⭐ <b>Calificación:</b> {imdb_info['rating']}/10\n"
-                f"{content_type_info}\n"
+                f"⭐ Calificación: {imdb_info['rating']}/10\n"
                 f"🔍 Buscando póster de alta calidad...\n"
                 f"Los archivos que envíes se renombrarán como <b>{content_name}</b>.</blockquote>",
                 parse_mode=ParseMode.HTML
@@ -2849,7 +2840,6 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
                     preview_text = (
                         f"✅ <b>{imdb_info['title']}</b> ({imdb_info['year']})\n\n"
                         f"⭐ <b>Calificación:</b> {imdb_info['rating']}/10\n"
-                        f"{content_type_info}\n"
                         f"🎭 <b>Género:</b> {imdb_info['genres']}\n\n"
                         f"<blockquote>Ahora envía todos los archivos del contenido.\n"
                         f"Los archivos se renombrarán como <b>{content_name}</b>.\n"
@@ -2870,8 +2860,6 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
                     logger.error(f"Error descargando póster para vista previa: {e}")
                     await status_msg.edit_text(
                         f"<blockquote>✅ Información encontrada: <b>{imdb_info['title']} ({imdb_info['year']})</b>\n"
-                        f"⭐ <b>Calificación:</b> {imdb_info['rating']}/10\n"
-                        f"{content_type_info}\n"
                         f"⚠️ No se pudo descargar póster para vista previa\n"
                         f"Los archivos se renombrarán como <b>{content_name}</b>.\n"
                         f"Ahora envía los archivos del contenido.</blockquote>",
@@ -2880,8 +2868,6 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
             else:
                 await status_msg.edit_text(
                     f"<blockquote>✅ Información encontrada: <b>{imdb_info['title']} ({imdb_info['year']})</b>\n"
-                    f"⭐ <b>Calificación:</b> {imdb_info['rating']}/10\n"
-                    f"{content_type_info}\n"
                     f"⚠️ No se encontró póster para este contenido\n"
                     f"Los archivos se renombrarán como <b>{content_name}</b>.\n"
                     f"Ahora envía los archivos del contenido.</blockquote>",
@@ -2917,6 +2903,7 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         # Cambiar estado a esperar archivos
         context.bot_data['load_state'] = LOAD_STATE_WAITING_FILES
+
 
 async def handle_load_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manejar la recepción de archivos durante el modo de carga masiva"""
@@ -3706,106 +3693,104 @@ async def send_all_episodes(query, context, series_id):
 
 # Función para buscar información de una película o serie en IMDb
 async def search_imdb_info(title):
-    """Buscar información de una película o serie en IMDb por título"""
+    """Buscar información de una película o serie en TMDB por título"""
     try:
-        # Buscar por título
-        search_results = ia.search_movie(title)
+        # Configuración de TMDB API
+        api_key = "ba7dc9b8dc85198f56a7b631a6519158"
+        headers = {
+            "Authorization": "Bearer eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiJiYTdkYzliOGRjODUxOThmNTZhN2I2MzFhNjUxOTE1OCIsIm5iZiI6MTc0NjY0NzU3OS4yMjEsInN1YiI6IjY4MWJiYTFiOWNkMjZiOTNhZTkzYWE4NiIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.l_w1ZbRM_l440ulow08e2M57sgGADs_pUeY8R81CawU",
+            "Content-Type": "application/json;charset=utf-8"
+        }
         
-        if not search_results:
+        # Buscar por título (directamente en español)
+        search_url = f"https://api.themoviedb.org/3/search/multi?api_key={api_key}&query={title}&language=es-ES"
+        response = requests.get(search_url, headers=headers)
+        response.raise_for_status()
+        search_data = response.json()
+        
+        if not search_data.get('results') or len(search_data['results']) == 0:
+            logger.info(f"No se encontraron resultados en TMDB para: {title}")
             return None
         
         # Tomar el primer resultado como el más probable
-        movie_id = search_results[0].movieID
+        first_result = search_data['results'][0]
+        media_type = first_result.get('media_type', 'movie')  # movie, tv, person
+        media_id = first_result.get('id')
         
-        # Obtener información detallada
-        movie = ia.get_movie(movie_id)
+        if media_type == 'person':
+            # Si el resultado es una persona, buscar su trabajo más popular
+            if len(search_data['results']) > 1:
+                # Tratar de encontrar un resultado que sea película o serie
+                for result in search_data['results']:
+                    if result.get('media_type') in ['movie', 'tv']:
+                        media_type = result.get('media_type')
+                        media_id = result.get('id')
+                        break
+            else:
+                logger.info(f"El resultado para '{title}' es una persona, no un contenido multimedia")
+                return None
         
-        # Determinar si es película o serie
-        kind = movie.get('kind', '')
-        is_series = kind == 'tv series'
-        content_type = "Serie" if is_series else "Película"
+        # Obtener información detallada (en español)
+        detail_url = f"https://api.themoviedb.org/3/{media_type}/{media_id}?api_key={api_key}&language=es-ES&append_to_response=credits"
+        detail_response = requests.get(detail_url, headers=headers)
+        detail_response.raise_for_status()
+        item = detail_response.json()
         
-        # Información adicional para series
-        series_status = ""
-        total_episodes = ""
-        if is_series:
-            # Intentar obtener el estado de emisión
-            try:
-                # Comprobar si la serie tiene fecha de finalización
-                years = movie.get('series years', '')
-                if years and '-' in years and not years.endswith('-'):
-                    series_status = "Finalizada"
-                else:
-                    series_status = "En emisión"
-                    
-                # Intentar obtener el número total de episodios
-                if 'number of episodes' in movie:
-                    total_episodes = f"{movie['number of episodes']} capítulos"
-                elif 'episodes' in movie and len(movie['episodes']) > 0:
-                    total_episodes = f"{len(movie['episodes'])} capítulos"
-                else:
-                    total_episodes = "Número de capítulos desconocido"
-            except Exception as se:
-                logger.error(f"Error obteniendo detalles de serie: {se}")
-                series_status = "Estado desconocido"
-                total_episodes = "Número de capítulos desconocido"
+        # Determinar título y año según el tipo de contenido
+        if media_type == 'movie':
+            title_name = item.get('title', 'Título no disponible')
+            release_date = item.get('release_date', '')
+            year = release_date[:4] if release_date else 'Año no disponible'
+        else:  # tv
+            title_name = item.get('name', 'Título no disponible')
+            first_air_date = item.get('first_air_date', '')
+            year = first_air_date[:4] if first_air_date else 'Año no disponible'
         
         # Recopilar información
         info = {
-            'title': movie.get('title', 'Título no disponible'),
-            'year': movie.get('year', 'Año no disponible'),
-            'rating': movie.get('rating', 'N/A'),
-            'plot': movie.get('plot outline', 'Sinopsis no disponible'),
-            'url': f"https://www.imdb.com/title/tt{movie_id}/",
-            'poster_url': None,
-            'content_type': content_type,
-            'is_series': is_series,
-            'series_status': series_status,
-            'total_episodes': total_episodes
+            'title': title_name,
+            'year': year,
+            'rating': item.get('vote_average', 'N/A'),
+            'plot': item.get('overview', 'Sinopsis no disponible'),
+            'url': f"https://www.themoviedb.org/{media_type}/{media_id}",
+            'poster_url': None
         }
         
-        # Obtener URL del póster en ALTA RESOLUCIÓN
-        if 'cover url' in movie:
-            poster_url = movie['cover url']
-            # Modificar la URL para obtener una imagen más grande
-            poster_url = re.sub(r'_V1_.*\.jpg', '_V1_SX800.jpg', poster_url)
+        # Obtener URL del póster en alta resolución
+        if item.get('poster_path'):
+            poster_url = f"https://image.tmdb.org/t/p/original{item['poster_path']}"
             info['poster_url'] = poster_url
-            
-        # Traducir la sinopsis a español
-        if info['plot'] and info['plot'] != 'Sinopsis no disponible':
-            try:
-                from deep_translator import GoogleTranslator
-                translator = GoogleTranslator(source='auto', target='es')
-                translated_text = translator.translate(info['plot'])
-                if translated_text:
-                    info['plot'] = translated_text
-                logger.info(f"Sinopsis traducida correctamente para {title}")
-            except Exception as e:
-                logger.error(f"Error traduciendo sinopsis: {e}")
-                # Si falla la traducción, mantener el texto original
+        # Alternativa: buscar imágenes más pequeñas si es necesario
+        # https://image.tmdb.org/t/p/w500{item['poster_path']}
             
         # Obtener géneros
-        if 'genres' in movie:
-            info['genres'] = ', '.join(movie['genres'][:3])
+        if 'genres' in item and item['genres']:
+            info['genres'] = ', '.join([genre['name'] for genre in item['genres'][:3]])
         else:
             info['genres'] = 'Género no disponible'
             
         # Obtener directores
         directors = []
-        if 'directors' in movie:
-            directors = [director['name'] for director in movie['directors'][:2]]
+        if 'credits' in item and 'crew' in item['credits']:
+            if media_type == 'movie':
+                directors = [member['name'] for member in item['credits']['crew'] if member['job'] == 'Director'][:3]
+            else:  # para series, buscar creadores o productores ejecutivos
+                directors = [member['name'] for member in item['credits']['crew'] 
+                           if member['job'] in ['Creator', 'Executive Producer', 'Director']][:3]
+        
         info['directors'] = ', '.join(directors) if directors else 'No disponible'
         
         # Obtener actores principales
         cast = []
-        if 'cast' in movie:
-            cast = [actor['name'] for actor in movie['cast'][:5]]
+        if 'credits' in item and 'cast' in item['credits']:
+            cast = [actor['name'] for actor in item['credits']['cast'][:5]]
         info['cast'] = ', '.join(cast) if cast else 'No disponible'
         
+        logger.info(f"Información encontrada en TMDB para '{title}': {title_name} ({year})")
         return info
         
     except Exception as e:
-        logger.error(f"Error buscando en IMDb: {e}")
+        logger.error(f"Error buscando en TMDB: {e}")
         return None
 
 @check_channel_membership
