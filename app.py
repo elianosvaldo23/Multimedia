@@ -350,8 +350,8 @@ async def send_content_message(chat_id, context, msg_id):
         )
     except Exception as e:
         logger.error(f"Error sending content message: {e}")
-        
-  async def handle_series_request(update: Update, context: ContextTypes.DEFAULT_TYPE, series_id: int) -> None:
+
+async def handle_series_request(update: Update, context: ContextTypes.DEFAULT_TYPE, series_id: int) -> None:
     """Manejar la solicitud de visualización de una serie"""
     user_id = update.effective_user.id
     user_data = db.get_user(user_id)
