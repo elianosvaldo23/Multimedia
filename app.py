@@ -350,7 +350,7 @@ async def send_content_message(chat_id, context, msg_id):
         )
     except Exception as e:
         logger.error(f"Error sending content message: {e}")
-
+        
 async def handle_series_request(update: Update, context: ContextTypes.DEFAULT_TYPE, series_id: int) -> None:
     """Manejar la solicitud de visualización de una serie"""
     user_id = update.effective_user.id
@@ -2696,16 +2696,17 @@ async def load_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             'files': [],
             'content_type': 'movie',  # Por defecto película, puede cambiar
             'season_num': None,
-            'title': None
+            'title': None,
+            'custom_filename': None  # Nuevo campo para el nombre personalizado
         }
         
         await update.message.reply_text(
             "<blockquote>📥 <b>Modo de carga masiva activado</b>\n\n"
-            "1️⃣ Envía primero el nombre exacto del contenido\n"
-            "2️⃣ El bot buscará información en IMDb\n"
+            "1️⃣ Envía primero el nombre exacto del contenido tal como lo quieres buscar en IMDb\n"
+            "2️⃣ El bot buscará información en IMDb y traducirá automáticamente la sinopsis\n"
             "3️⃣ Luego envía todos los archivos de la película o capítulos de la serie\n"
-            "4️⃣ Cuando termines con este contenido, simplemente envía el nombre del siguiente contenido\n"
-            "5️⃣ El bot detectará automáticamente el nuevo nombre y procesará el contenido anterior\n"
+            "4️⃣ Al enviar el archivo, éste será renombrado con el mismo nombre del contenido que buscaste\n"
+            "5️⃣ Para continuar con otro contenido, simplemente envía el nombre del siguiente\n"
             "6️⃣ Para finalizar el modo de carga masiva, envía /load nuevamente\n\n"
             "✅ El bot procesará todo con efectos visuales como el comando /upser</blockquote>",
             parse_mode=ParseMode.HTML
@@ -2799,7 +2800,8 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
             'files': [],
             'content_type': 'movie',  # Por defecto película, puede cambiar
             'season_num': None,
-            'title': content_name
+            'title': content_name,
+            'custom_filename': content_name  # Usar el nombre exacto que el admin proporcionó
         }
         
         context.bot_data['current_content'] = current_content
@@ -2809,6 +2811,7 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
             await status_msg.edit_text(
                 f"<blockquote>⚠️ No se encontró información en IMDb para <b>{content_name}</b>.\n"
                 f"Continuaremos con información básica.\n"
+                f"Los archivos que envíes se renombrarán como <b>{content_name}</b>.\n"
                 f"Ahora envía los archivos del contenido.</blockquote>",
                 parse_mode=ParseMode.HTML
             )
@@ -2817,7 +2820,8 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
             await status_msg.edit_text(
                 f"<blockquote>✅ Información encontrada: <b>{imdb_info['title']} ({imdb_info['year']})</b>\n"
                 f"⭐ Calificación: {imdb_info['rating']}/10\n"
-                f"🔍 Buscando póster de alta calidad...</blockquote>",
+                f"🔍 Buscando póster de alta calidad...\n"
+                f"Los archivos que envíes se renombrarán como <b>{content_name}</b>.</blockquote>",
                 parse_mode=ParseMode.HTML
             )
             
@@ -2838,7 +2842,7 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
                         f"⭐ <b>Calificación:</b> {imdb_info['rating']}/10\n"
                         f"🎭 <b>Género:</b> {imdb_info['genres']}\n\n"
                         f"<blockquote>Ahora envía todos los archivos del contenido.\n"
-                        f"Si es una serie, envía todos los capítulos en orden.\n"
+                        f"Los archivos se renombrarán como <b>{content_name}</b>.\n"
                         f"Cuando termines, envía el nombre del siguiente contenido.</blockquote>"
                     )
                     
@@ -2857,6 +2861,7 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
                     await status_msg.edit_text(
                         f"<blockquote>✅ Información encontrada: <b>{imdb_info['title']} ({imdb_info['year']})</b>\n"
                         f"⚠️ No se pudo descargar póster para vista previa\n"
+                        f"Los archivos se renombrarán como <b>{content_name}</b>.\n"
                         f"Ahora envía los archivos del contenido.</blockquote>",
                         parse_mode=ParseMode.HTML
                     )
@@ -2864,6 +2869,7 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
                 await status_msg.edit_text(
                     f"<blockquote>✅ Información encontrada: <b>{imdb_info['title']} ({imdb_info['year']})</b>\n"
                     f"⚠️ No se encontró póster para este contenido\n"
+                    f"Los archivos se renombrarán como <b>{content_name}</b>.\n"
                     f"Ahora envía los archivos del contenido.</blockquote>",
                     parse_mode=ParseMode.HTML
                 )
@@ -2879,6 +2885,7 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
         await status_msg.edit_text(
             f"<blockquote>❌ Error al buscar información para <b>{content_name}</b>: {str(e)[:100]}\n"
             f"Continuaremos con información básica.\n"
+            f"Los archivos se renombrarán como <b>{content_name}</b>.\n"
             f"Ahora envía los archivos del contenido.</blockquote>",
             parse_mode=ParseMode.HTML
         )
@@ -2890,7 +2897,8 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
             'files': [],
             'content_type': 'movie',
             'season_num': None,
-            'title': content_name
+            'title': content_name,
+            'custom_filename': content_name  # Usar el nombre exacto que el admin proporcionó
         }
         
         # Cambiar estado a esperar archivos
@@ -2914,7 +2922,7 @@ async def handle_load_content(update: Update, context: ContextTypes.DEFAULT_TYPE
         # Extraer información del archivo
         message_id = update.message.message_id
         chat_id = update.effective_chat.id
-        caption = update.message.caption or ""
+        original_caption = update.message.caption or ""
         file_name = update.message.document.file_name if update.message.document else None
         
         # Obtener el contenido actual
@@ -2930,7 +2938,7 @@ async def handle_load_content(update: Update, context: ContextTypes.DEFAULT_TYPE
         # Determinar si esto es una serie basado en patrones en el nombre del archivo o caption
         season_episode_pattern = re.search(r'S(\d+)E(\d+)|(\d+)x(\d+)', file_name or caption or '', re.IGNORECASE)
         
-        if "#serie" in caption.lower() or "#series" in caption.lower() or season_episode_pattern:
+        if "#serie" in original_caption.lower() or "#series" in original_caption.lower() or season_episode_pattern:
             current_content['content_type'] = 'series'
             
             # Extraer temporada y episodio si están disponibles
@@ -2954,6 +2962,55 @@ async def handle_load_content(update: Update, context: ContextTypes.DEFAULT_TYPE
         # Limpiar caption de links y otros elementos
         clean_caption = clean_content_metadata(caption)
         
+        # Obtener el nombre personalizado del administrador
+        custom_filename = current_content.get('custom_filename', current_content.get('title', 'Sin título'))
+        
+        # Crear nuevo caption con el nombre personalizado
+        if current_content['content_type'] == 'series':
+            new_caption = f"{custom_filename} {season_num:02d}x{episode_num:02d}"
+        else:
+            new_caption = custom_filename
+        
+        # Reemplazar el mensaje original con el nuevo caption
+        try:
+            # Obtener el file_id del archivo actual
+            if update.message.video:
+                file_id = update.message.video.file_id
+                # Borrar el mensaje original
+                await context.bot.delete_message(
+                    chat_id=chat_id, 
+                    message_id=message_id
+                )
+                # Enviar un nuevo mensaje con el caption correcto
+                new_message = await context.bot.send_video(
+                    chat_id=chat_id,
+                    video=file_id,
+                    caption=new_caption
+                )
+                # Actualizar el message_id para guardarlo correctamente
+                message_id = new_message.message_id
+            elif update.message.document:
+                file_id = update.message.document.file_id
+                # Borrar el mensaje original
+                await context.bot.delete_message(
+                    chat_id=chat_id, 
+                    message_id=message_id
+                )
+                # Enviar un nuevo mensaje con el caption correcto
+                new_message = await context.bot.send_document(
+                    chat_id=chat_id,
+                    document=file_id,
+                    caption=new_caption
+                )
+                # Actualizar el message_id para guardarlo correctamente
+                message_id = new_message.message_id
+            
+            # Usar el nuevo caption
+            clean_caption = new_caption
+        except Exception as e:
+            logger.error(f"Error al reenviar con nuevo caption: {e}")
+            # Si falla, mantener el caption original
+        
         # Crear objeto para este archivo
         file_data = {
             'message_id': message_id,
@@ -2970,6 +3027,7 @@ async def handle_load_content(update: Update, context: ContextTypes.DEFAULT_TYPE
         if current_content['content_type'] == 'series':
             await update.message.reply_text(
                 f"<blockquote>📥 Capítulo {episode_num} recibido para: <b>{current_content['title']}</b>\n"
+                f"Renombrado como: <b>{clean_caption}</b>\n"
                 f"Total de capítulos: {len(current_content['files'])}\n\n"
                 f"Envía más capítulos o el nombre de otro contenido para continuar.</blockquote>",
                 parse_mode=ParseMode.HTML
@@ -2977,6 +3035,7 @@ async def handle_load_content(update: Update, context: ContextTypes.DEFAULT_TYPE
         else:
             await update.message.reply_text(
                 f"<blockquote>📥 Archivo recibido para: <b>{current_content['title']}</b>\n"
+                f"Renombrado como: <b>{clean_caption}</b>\n"
                 f"Total de archivos: {len(current_content['files'])}\n\n"
                 f"Envía más partes o el nombre de otro contenido para continuar.</blockquote>",
                 parse_mode=ParseMode.HTML
@@ -3621,7 +3680,7 @@ async def send_all_episodes(query, context, series_id):
 
 # Función para buscar información de una película o serie en IMDb
 async def search_imdb_info(title):
-    """Buscar información de una película o serie en IMDb por título"""
+    """Buscar información de una película o serie en IMDb por título y traducir todo el contenido"""
     try:
         # Buscar por título
         search_results = ia.search_movie(title)
@@ -3635,7 +3694,7 @@ async def search_imdb_info(title):
         # Obtener información detallada
         movie = ia.get_movie(movie_id)
         
-        # Recopilar información
+        # Recopilar información original (en inglés)
         info = {
             'title': movie.get('title', 'Título no disponible'),
             'year': movie.get('year', 'Año no disponible'),
@@ -3649,23 +3708,9 @@ async def search_imdb_info(title):
         if 'cover url' in movie:
             poster_url = movie['cover url']
             # Modificar la URL para obtener una imagen más grande
-            # Las URLs de IMDb suelen ser como: https://m.media-amazon.com/images/M/.../MV5BMT...._V1_UX182_CR0,0,182,268_AL_.jpg
-            # Reemplazamos "_V1_UX182_CR0,0,182,268_AL_" por "_V1_SX800" para obtener una imagen de 800px de ancho
             poster_url = re.sub(r'_V1_.*\.jpg', '_V1_SX800.jpg', poster_url)
             info['poster_url'] = poster_url
-            
-        # Traducir la sinopsis a español utilizando deep-translator
-        if info['plot'] and info['plot'] != 'Sinopsis no disponible':
-            try:
-                from deep_translator import GoogleTranslator
-                translator = GoogleTranslator(source='auto', target='es')
-                translated_text = translator.translate(info['plot'])
-                if translated_text:
-                    info['plot'] = translated_text
-            except Exception as e:
-                logger.error(f"Error traduciendo sinopsis: {e}")
-                # Si falla la traducción, mantener el texto original
-            
+        
         # Obtener géneros
         if 'genres' in movie:
             info['genres'] = ', '.join(movie['genres'][:3])
@@ -3683,6 +3728,36 @@ async def search_imdb_info(title):
         if 'cast' in movie:
             cast = [actor['name'] for actor in movie['cast'][:5]]
         info['cast'] = ', '.join(cast) if cast else 'No disponible'
+        
+        # Preparar todos los textos para traducir
+        texts_to_translate = {
+            'title': info['title'],
+            'plot': info['plot'],
+            'genres': info['genres'],
+            'directors': info['directors'],
+            'cast': info['cast']
+        }
+        
+        # Traducir todos los textos a español
+        try:
+            from deep_translator import GoogleTranslator
+            translator = GoogleTranslator(source='auto', target='es')
+            
+            # Traducir cada campo y actualizar la información
+            for field, text in texts_to_translate.items():
+                if text and text not in ['No disponible', 'Género no disponible', 'Sinopsis no disponible', 'Título no disponible', 'N/A']:
+                    try:
+                        translated_text = translator.translate(text)
+                        if translated_text:
+                            info[field] = translated_text
+                    except Exception as field_error:
+                        logger.error(f"Error traduciendo campo {field}: {field_error}")
+                        # Si falla la traducción de un campo específico, mantener el texto original
+            
+            logger.info(f"Post completo traducido correctamente para {title}")
+        except Exception as e:
+            logger.error(f"Error general en traducción: {e}")
+            # Si falla la traducción, mantener los textos originales
         
         return info
         
