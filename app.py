@@ -116,6 +116,34 @@ MAX_RESULTS = 10
 # User preferences (store user settings)
 user_preferences = {}
 
+def truncate_description(description: str, max_length: int = 1000) -> str:
+    """Trunca la descripción preservando las etiquetas HTML y estructura"""
+    if len(description) <= max_length:
+        return description
+        
+    # Asegurarse de preservar las etiquetas importantes
+    truncated = description[:max_length]
+    
+    # Encontrar el último salto de línea completo
+    last_newline = truncated.rfind('\n')
+    if last_newline > max_length * 0.8:  # Si está en el último 20% del texto
+        truncated = truncated[:last_newline]
+    
+    # Asegurarse de que todas las etiquetas HTML están cerradas
+    open_tags = []
+    for match in re.finditer(r'<(\w+)[^>]*>', truncated):
+        open_tags.append(match.group(1))
+    for match in re.finditer(r'</(\w+)>', truncated):
+        if match.group(1) in open_tags:
+            open_tags.remove(match.group(1))
+    
+    # Cerrar las etiquetas abiertas en orden inverso
+    truncated += "..."
+    for tag in reversed(open_tags):
+        truncated += f"</{tag}>"
+    
+    return truncated
+
 # Función para verificar membresía al canal
 async def is_channel_member(user_id, context):
     """Verifica si un usuario es miembro del canal principal."""
@@ -337,8 +365,8 @@ async def send_content_message(chat_id, context, msg_id):
         await context.bot.send_message(
             chat_id=chat_id,
             text=(
-                "📌 Muchas gracias por Preferirnos\n\n"
-                "<blockquote>En caso de que no puedas reenviar ni guardar el archivo en tu teléfono, "
+                "📌 Muchas gracias por Preferirnos\n"
+                "<blockquote expandable>En caso de que no puedas reenviar ni guardar el archivo en tu teléfono, "
                 "quiere decir que no tienes un plan comprado. Por lo cual te recomiendo "
                 "que adquieras los planes Medio o Ultra que le dan estas posibilidades.</blockquote>\n\n"
                 "◈ Nota\n"
@@ -3089,9 +3117,10 @@ async def finalize_current_content(update, context):
                 f"📝 <b>Sinopsis:</b>\n<blockquote expandable>{imdb_info.get('plot', 'No disponible')}</blockquote>\n\n"
                 f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
             )
-            
+            # Truncar la descripción si es muy larga
+            description = truncate_description(description)
         else:
-            description = (
+            description = truncate_description(
                 f"<b>{current_content['title']}</b>\n\n"
                 f"<blockquote>No se encontró información adicional para este contenido.</blockquote>"
             )
@@ -4261,7 +4290,7 @@ async def send_additional_messages(context, chat_id, msg_id, can_forward):
         # Enviar mensaje con toda la información y el botón de compartir
         await context.bot.send_message(
             chat_id=chat_id,
-            text="📌 Muchas gracias por Preferirnos\n\n"
+            text="📌 Muchas gracias por Preferirnos\n"
                  "<blockquote expandable>En caso de que no puedas reenviar ni guardar el archivo en tu teléfono, "
                  "quiere decir que no tienes un plan comprado. Por lo cual te recomiendo "
                  "que adquieras los planes Medio o Ultra que le dan estas posibilidades.\n\n</blockquote>"
@@ -4543,14 +4572,17 @@ async def handle_plans(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Tu saldo actual: {user_data.get('balance', 0)} 💎\n"
         f"Plan actual: {plan_name}\n\n"
         f"<blockquote>📋 Planes Disponibles:\n\n</blockquote>"
-        f"Pro (169.99 | 29 ⭐)\n"
-        f"169.99 CUP\n"
+        f"Pro ✨\n"
+        f"150 CUP (Transferencia)\n"
+        f"180 CUP (Saldo)\n"
         f"0.49 USD\n\n"
-        f"Plus (649.99 | 117 ⭐)\n"
-        f"649.99 CUP\n"
+        f"Plus ⭐\n"
+        f"600 CUP (Transferencia)\n"
+        f"700 CUP (Saldo)\n"
         f"1.99 USD\n\n"
-        f"Ultra (1049.99 | 176 ⭐)\n"
-        f"1049.99 CUP\n"
+        f"Ultra 🌟\n"
+        f"950 CUP (Transferencia)\n"
+        f"1100 CUP (Saldo)\n"
         f"2.99 USD\n\n"
         f"<blockquote>Pulsa los botones de debajo para mas info de los planes y formas de pago.</blockquote>"
     )
@@ -4593,7 +4625,7 @@ async def handle_plan_details(update: Update, context: ContextTypes.DEFAULT_TYPE
         plan_details = (
             f"💫 <b>Plan Pro - Detalles</b> 💫\n\n"
             f"<blockquote>"
-            f"Precio: 169.99\n"
+            f"Precio: 150\n"
             f"Duración: 30 días\n\n"
             f"Beneficios:\n"
             f"└ 2 pedidos diarios\n"
@@ -4606,7 +4638,7 @@ async def handle_plan_details(update: Update, context: ContextTypes.DEFAULT_TYPE
         plan_details = (
             f"💫 <b>Plan Plus - Detalles</b> 💫\n\n"
             f"<blockquote>"
-            f"Precio: 649.99\n"
+            f"Precio: 500\n"
             f"Duración: 30 días\n\n"
             f"Beneficios:\n"
             f"└ 10 pedidos diarios\n"
@@ -4621,7 +4653,7 @@ async def handle_plan_details(update: Update, context: ContextTypes.DEFAULT_TYPE
         plan_details = (
             f"⭐ <b>Plan Ultra - Detalles</b> ⭐\n\n"
             f"<blockquote>"
-            f"Precio: 1049.99\n"
+            f"Precio: 950\n"
             f"Duración: 30 días\n\n"
             f"Beneficios:\n"
             f"└ Pedidos ilimitados\n"
@@ -4739,8 +4771,10 @@ async def handle_info(update: Update, context: ContextTypes.DEFAULT_TYPE):
     info_text = (
         "Funcionamiento del bot:\n\n"
         "<b>Comandos:</b>\n"
-        "/start - Inicia el bot y envía el mensaje de bienvenida con los botones principales\n"
-        "/search - Seguido del nombre de la película o serie, buscará en el canal y luego enviará al usuario\n\n"
+        "<code><b>/start</code></b> - Inicia el bot y envía el mensaje de bienvenida con los botones principales\n"
+        "<code><b>/search</code></b> [texto] - Busca películas o series\n"
+        "/pedido [año] [nombre] - Realiza una solicitud de contenido (ej: /pedido 2024 Avatar 3)\n"
+        "<code><b>/gift_code</code></b> [código] - Canjea un código de regalo para obtener un plan premium\n"
         "<blockquote>Si la película o serie no se encuentra en el canal, el bot te permitirá hacer un pedido.\n\n"
         "Búsquedas para usuarios sin plan premium: solo podrán realizar 3 búsquedas diarias, 1 pedido diario y no se les permitirá reenviar el video.</blockquote>"
     )
