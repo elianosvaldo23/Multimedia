@@ -323,28 +323,35 @@ async def send_content_message(chat_id, context, msg_id):
     try:
         # Generar URL para compartir
         view_url = f"https://t.me/MultimediaTVbot?start=content_{msg_id}"
-
-        # Crear el botón de compartir
-        share_keyboard = [
-            [InlineKeyboardButton("Compartir 🔗", url=f"https://t.me/share/url?url={view_url}&text=¡Mira%20este%20contenido%20en%20MultimediaTV!")]
-        ]
-        share_markup = InlineKeyboardMarkup(share_keyboard)
         
+        # Crear el botón de compartir y el mensaje con el botón
+        keyboard = [
+            [InlineKeyboardButton(
+                "🔗 Compartir", 
+                url=f"https://t.me/share/url?url={view_url}&text=¡Mira este contenido en MultimediaTV!"
+            )]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        # Enviar mensaje con el texto estándar y el botón
         await context.bot.send_message(
             chat_id=chat_id,
-            text="📌 Muchas gracias por Preferirnos\n\n"
-                 "<blockquote expandable>En caso de que no puedas reenviar ni guardar el archivo en tu teléfono, "
-                 "quiere decir que no tienes un plan comprado. Por lo cual te recomiendo "
-                 "que adquieras los planes Medio o Ultra que le dan estas posibilidades.\n\n</blockquote>"
-                 "◈ Nota\n"
-                 "<blockquote expandable>Adquiere un Plan y disfruta de todas las opciones\n\n</blockquote>"
-                 "Comparte con tus familiares y amigos el contenido anterior ☝️",
-            parse_mode=ParseMode.HTML
+            text=(
+                "📌 Muchas gracias por Preferirnos\n\n"
+                "<blockquote>En caso de que no puedas reenviar ni guardar el archivo en tu teléfono, "
+                "quiere decir que no tienes un plan comprado. Por lo cual te recomiendo "
+                "que adquieras los planes Medio o Ultra que le dan estas posibilidades.</blockquote>\n\n"
+                "◈ Nota\n"
+                "<blockquote>Adquiere un Plan y disfruta de todas las opciones</blockquote>\n\n"
+                "Comparte con tus familiares y amigos el contenido anterior ☝️"
+            ),
+            parse_mode=ParseMode.HTML,
+            reply_markup=reply_markup
         )
     except Exception as e:
-        logger.error(f"Error sending content message: {e}")    
-
-async def handle_series_request(update: Update, context: ContextTypes.DEFAULT_TYPE, series_id: int) -> None:
+        logger.error(f"Error sending content message: {e}")
+        
+  async def handle_series_request(update: Update, context: ContextTypes.DEFAULT_TYPE, series_id: int) -> None:
     """Manejar la solicitud de visualización de una serie"""
     user_id = update.effective_user.id
     user_data = db.get_user(user_id)
@@ -436,12 +443,15 @@ async def handle_series_request(update: Update, context: ContextTypes.DEFAULT_TY
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         # Enviar mensaje con botones
-        await update.message.reply_text(
+        msg = await update.message.reply_text(
             f"📺 <b>{series['title']}</b>\n\n"
             f"Selecciona un capítulo para ver o solicita todos los capítulos:",
             reply_markup=reply_markup,
             parse_mode=ParseMode.HTML
         )
+        
+        # Enviar mensaje estándar con botón de compartir
+        await send_content_message(update.effective_chat.id, context, msg.message_id)
         
     except Exception as e:
         logger.error(f"Error enviando datos de serie: {e}")
@@ -449,7 +459,7 @@ async def handle_series_request(update: Update, context: ContextTypes.DEFAULT_TY
             f"❌ Error al mostrar la serie: {str(e)[:100]}\n\n"
             f"Por favor, intenta más tarde.",
             parse_mode=ParseMode.HTML
-        )
+        )      
 
 async def send_episode(query, context, series_id, episode_number):
     """Enviar un capítulo específico al usuario"""
