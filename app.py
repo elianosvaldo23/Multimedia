@@ -118,15 +118,25 @@ user_preferences = {}
 
 def truncate_description(description: str, max_length: int = 1000) -> str:
     """Trunca la descripción preservando las etiquetas HTML y estructura"""
+    # Si el texto es más corto que el límite, agregar marca de agua si falta
     if len(description) <= max_length:
+        if "Multimedia-TV 📺" not in description:
+            description += f"\n\n🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
         return description
         
-    # Asegurarse de preservar las etiquetas importantes
-    truncated = description[:max_length]
+    # Asegurarse de preservar la marca de agua
+    watermark = "🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
+    
+    # Remover la marca de agua temporalmente si existe
+    temp_desc = description.replace(watermark, '')
+    
+    # Truncar el contenido principal
+    max_content_length = max_length - len(watermark) - 4  # 4 para los saltos de línea
+    truncated = temp_desc[:max_content_length]
     
     # Encontrar el último salto de línea completo
     last_newline = truncated.rfind('\n')
-    if last_newline > max_length * 0.8:  # Si está en el último 20% del texto
+    if last_newline > max_content_length * 0.8:  # Si está en el último 20% del texto
         truncated = truncated[:last_newline]
     
     # Asegurarse de que todas las etiquetas HTML están cerradas
@@ -141,6 +151,9 @@ def truncate_description(description: str, max_length: int = 1000) -> str:
     truncated += "..."
     for tag in reversed(open_tags):
         truncated += f"</{tag}>"
+    
+    # Agregar la marca de agua al final
+    truncated += f"\n\n{watermark}"
     
     return truncated
 
@@ -3096,16 +3109,16 @@ async def finalize_current_content(update, context):
         # Obtener información de IMDb
         imdb_info = current_content.get('imdb_info', {})
         
+        # Determinar el tipo de contenido y estado para series
+        content_type_info = ""
+        if 'content_type' in imdb_info:
+            content_type_info = f"🎬 <b>Tipo:</b> {imdb_info['content_type']}\n"
+            if imdb_info.get('is_series', False):
+                content_type_info += f"📺 <b>Estado:</b> {imdb_info.get('series_status', 'Desconocido')}\n"
+                content_type_info += f"🔢 <b>{imdb_info.get('total_episodes', 'Número de capítulos desconocido')}</b>\n"
+        
         # Crear descripción para el post
         if imdb_info:
-            # Determinar el tipo de contenido y estado para series
-            content_type_info = ""
-            if 'content_type' in imdb_info:
-                content_type_info = f"🎬 <b>Tipo:</b> {imdb_info['content_type']}\n"
-                if imdb_info.get('is_series', False):
-                    content_type_info += f"📺 <b>Estado:</b> {imdb_info.get('series_status', 'Desconocido')}\n"
-                    content_type_info += f"🔢 <b>{imdb_info.get('total_episodes', 'Número de capítulos desconocido')}</b>\n"
-            
             description = (
                 f"<b>{imdb_info.get('title', current_content['title'])}</b> "
                 f"({imdb_info.get('year', 'N/A')})\n\n"
@@ -3117,15 +3130,20 @@ async def finalize_current_content(update, context):
                 f"📝 <b>Sinopsis:</b>\n<blockquote expandable>{imdb_info.get('plot', 'No disponible')}</blockquote>\n\n"
                 f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
             )
-            # Truncar la descripción si es muy larga
-            description = truncate_description(description)
         else:
-            description = truncate_description(
+            description = (
                 f"<b>{current_content['title']}</b>\n\n"
-                f"<blockquote>No se encontró información adicional para este contenido.</blockquote>"
+                f"<blockquote>No se encontró información adicional para este contenido.</blockquote>\n\n"
+                f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
             )
         
-        # El resto de la función continúa igual...
+        # Asegurar que la marca de agua esté presente
+        if "Multimedia-TV 📺" not in description:
+            description += f"\n\n🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
+        
+        # Truncar la descripción si es muy larga
+        description = truncate_description(description)
+        
         # Descargar póster si está disponible
         cover_photo = None
         
@@ -3161,7 +3179,6 @@ async def finalize_current_content(update, context):
                 return
         
         if not cover_photo:
-            # No se pudo obtener póster
             await status_message.edit_text(
                 f"<blockquote>⚠️ No se pudo obtener póster para <b>{current_content['title']}</b>\n"
                 f"No se puede continuar sin imagen de portada.</blockquote>",
@@ -3223,7 +3240,7 @@ async def finalize_current_content(update, context):
             reply_markup=reply_markup
         )
         
-        # 6. Enviar portada al canal principal (SOLO LA PORTADA CON BOTÓN)
+        # 6. Subir portada al canal principal
         sent_cover_main = await context.bot.send_photo(
             chat_id=CHANNEL_ID,
             photo=cover_photo,
@@ -3258,7 +3275,18 @@ async def finalize_current_content(update, context):
                     message_id=msg_id
                 )
         
-        # 9. Informar éxito
+        # 9. Reiniciar el contenido actual
+        context.bot_data['current_content'] = {
+            'name': None,
+            'imdb_info': None,
+            'files': [],
+            'content_type': 'movie',
+            'season_num': None,
+            'title': None,
+            'custom_filename': None
+        }
+        
+        # 10. Informar éxito
         await status_message.edit_text(
             f"<blockquote>✅ <b>{current_content['title']}</b> procesado correctamente\n"
             f"Tipo: {'Serie' if is_series else 'Película'}\n"
@@ -3267,17 +3295,6 @@ async def finalize_current_content(update, context):
             f"✅ Todo el contenido subido a canal de búsqueda</blockquote>",
             parse_mode=ParseMode.HTML
         )
-        
-        # Reiniciar el contenido actual
-        context.bot_data['current_content'] = {
-            'name': None,
-            'imdb_info': None,
-            'files': [],
-            'content_type': 'movie',
-            'season_num': None,
-            'title': None,
-            'custom_filename': None  # Reiniciar el nombre personalizado
-        }
         
     except Exception as e:
         logger.error(f"Error en finalize_current_content: {e}")
