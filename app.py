@@ -3109,19 +3109,26 @@ async def finalize_current_content(update, context):
         # Obtener información de IMDb
         imdb_info = current_content.get('imdb_info', {})
         
+        # Determinar el tipo de contenido
+        content_type_header = "Serie 🎬" if current_content['content_type'] == 'series' else "Película 🍿"
+        
         # Determinar el tipo de contenido y estado para series
         content_type_info = ""
         if 'content_type' in imdb_info:
-            content_type_info = f"🎬 <b>Tipo:</b> {imdb_info['content_type']}\n"
             if imdb_info.get('is_series', False):
                 content_type_info += f"📺 <b>Estado:</b> {imdb_info.get('series_status', 'Desconocido')}\n"
                 content_type_info += f"🔢 <b>{imdb_info.get('total_episodes', 'Número de capítulos desconocido')}</b>\n"
         
         # Crear descripción para el post
         if imdb_info:
+            spanish_title = imdb_info.get('title', current_content['title'])
+            english_title = imdb_info.get('original_title', spanish_title)
+            
             description = (
-                f"<b>{imdb_info.get('title', current_content['title'])}</b> "
-                f"({imdb_info.get('year', 'N/A')})\n\n"
+                f"{content_type_header}\n\n"
+                f"<b>{spanish_title}</b> ✓\n"
+                f"<b>{english_title}</b> ✓\n\n"
+                f"📅 <b>Año:</b> {imdb_info.get('year', 'N/A')}\n"
                 f"⭐ <b>Calificación:</b> {imdb_info.get('rating', 'N/A')}/10\n"
                 f"{content_type_info}"
                 f"🎭 <b>Género:</b> {imdb_info.get('genres', 'No disponible')}\n"
@@ -3131,8 +3138,10 @@ async def finalize_current_content(update, context):
                 f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
             )
         else:
+            title = current_content.get('title', 'Sin título')
             description = (
-                f"<b>{current_content['title']}</b>\n\n"
+                f"{content_type_header}\n\n"
+                f"<b>{title}</b> ✓\n\n"
                 f"<blockquote>No se encontró información adicional para este contenido.</blockquote>\n\n"
                 f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
             )
@@ -3744,97 +3753,125 @@ async def search_imdb_info(title):
         # Configuración de TMDB API
         api_key = "ba7dc9b8dc85198f56a7b631a6519158"
         headers = {
-            "Authorization": "Bearer eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiJiYTdkYzliOGRjODUxOThmNTZhN2I2MzFhNjUxOTE1OCIsIm5iZiI6MTc0NjY0NzU3OS4yMjEsInN1YiI6IjY4MWJiYTFiOWNkMjZiOTNhZTkzYWE4NiIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.l_w1ZbRM_l440ulow08e2M57sgGADs_pUeY8R81CawU",
+            "Authorization": "Bearer eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiJiYTdkYzliOGRjODUxOThmNTZhN2I2MzFhNjUxOTE1OCIsInN1YiI6IjY4MWJiYTFiOWNkMjZiOTNhZTkzYWE4NiIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.mYyI0IG4WIX907N6ZXJ6cQU77CQHPP8OGZTZOPBa0Rw",
             "Content-Type": "application/json;charset=utf-8"
         }
-        
-        # Buscar por título (directamente en español)
+
+        # Buscar por título (en español primero)
         search_url = f"https://api.themoviedb.org/3/search/multi?api_key={api_key}&query={title}&language=es-ES"
         response = requests.get(search_url, headers=headers)
         response.raise_for_status()
         search_data = response.json()
-        
+
         if not search_data.get('results') or len(search_data['results']) == 0:
             logger.info(f"No se encontraron resultados en TMDB para: {title}")
             return None
-        
-        # Tomar el primer resultado como el más probable
+
+        # Tomar el primer resultado
         first_result = search_data['results'][0]
-        media_type = first_result.get('media_type', 'movie')  # movie, tv, person
+        media_type = first_result.get('media_type', 'movie')
         media_id = first_result.get('id')
-        
+
+        # Si el resultado es una persona, intentar encontrar otro resultado
         if media_type == 'person':
-            # Si el resultado es una persona, buscar su trabajo más popular
             if len(search_data['results']) > 1:
-                # Tratar de encontrar un resultado que sea película o serie
                 for result in search_data['results']:
                     if result.get('media_type') in ['movie', 'tv']:
                         media_type = result.get('media_type')
                         media_id = result.get('id')
                         break
             else:
-                logger.info(f"El resultado para '{title}' es una persona, no un contenido multimedia")
                 return None
-        
-        # Obtener información detallada (en español)
+
+        # Obtener información detallada en español
         detail_url = f"https://api.themoviedb.org/3/{media_type}/{media_id}?api_key={api_key}&language=es-ES&append_to_response=credits"
         detail_response = requests.get(detail_url, headers=headers)
         detail_response.raise_for_status()
         item = detail_response.json()
-        
-        # Determinar título y año según el tipo de contenido
+
+        # Obtener información en inglés para el título original
+        detail_url_en = f"https://api.themoviedb.org/3/{media_type}/{media_id}?api_key={api_key}&language=en-US"
+        detail_response_en = requests.get(detail_url_en, headers=headers)
+        detail_response_en.raise_for_status()
+        item_en = detail_response_en.json()
+
+        # Determinar títulos y año según el tipo de contenido
         if media_type == 'movie':
-            title_name = item.get('title', 'Título no disponible')
+            spanish_title = item.get('title', 'Título no disponible')
+            english_title = item_en.get('original_title', spanish_title)  # Usar original_title para películas
             release_date = item.get('release_date', '')
-            year = release_date[:4] if release_date else 'Año no disponible'
+            year = release_date[:4] if release_date else 'N/A'
         else:  # tv
-            title_name = item.get('name', 'Título no disponible')
+            spanish_title = item.get('name', 'Título no disponible')
+            english_title = item_en.get('original_name', spanish_title)  # Usar original_name para series
             first_air_date = item.get('first_air_date', '')
-            year = first_air_date[:4] if first_air_date else 'Año no disponible'
-        
+            year = first_air_date[:4] if first_air_date else 'N/A'
+
         # Recopilar información
         info = {
-            'title': title_name,
+            'title': spanish_title,
+            'original_title': english_title,
             'year': year,
-            'rating': item.get('vote_average', 'N/A'),
+            'rating': round(item.get('vote_average', 0), 1),
             'plot': item.get('overview', 'Sinopsis no disponible'),
             'url': f"https://www.themoviedb.org/{media_type}/{media_id}",
-            'poster_url': None
+            'poster_url': None,
+            'is_series': media_type == 'tv'
         }
-        
+
+        # Obtener géneros
+        if item.get('genres'):
+            info['genres'] = ', '.join(genre['name'] for genre in item['genres'][:3])
+        else:
+            info['genres'] = 'No disponible'
+
         # Obtener URL del póster en alta resolución
         if item.get('poster_path'):
-            poster_url = f"https://image.tmdb.org/t/p/original{item['poster_path']}"
-            info['poster_url'] = poster_url
-        # Alternativa: buscar imágenes más pequeñas si es necesario
-        # https://image.tmdb.org/t/p/w500{item['poster_path']}
-            
-        # Obtener géneros
-        if 'genres' in item and item['genres']:
-            info['genres'] = ', '.join([genre['name'] for genre in item['genres'][:3]])
-        else:
-            info['genres'] = 'Género no disponible'
-            
+            info['poster_url'] = f"https://image.tmdb.org/t/p/original{item['poster_path']}"
+
         # Obtener directores
         directors = []
-        if 'credits' in item and 'crew' in item['credits']:
-            if media_type == 'movie':
-                directors = [member['name'] for member in item['credits']['crew'] if member['job'] == 'Director'][:3]
-            else:  # para series, buscar creadores o productores ejecutivos
+        if media_type == 'movie':
+            if item.get('credits', {}).get('crew'):
                 directors = [member['name'] for member in item['credits']['crew'] 
-                           if member['job'] in ['Creator', 'Executive Producer', 'Director']][:3]
-        
+                           if member['job'] == 'Director'][:3]
+        else:
+            if item.get('credits', {}).get('crew'):
+                directors = [member['name'] for member in item['credits']['crew']
+                           if member['job'] in ['Creator', 'Executive Producer']][:3]
         info['directors'] = ', '.join(directors) if directors else 'No disponible'
-        
+
         # Obtener actores principales
-        cast = []
-        if 'credits' in item and 'cast' in item['credits']:
+        if item.get('credits', {}).get('cast'):
             cast = [actor['name'] for actor in item['credits']['cast'][:5]]
-        info['cast'] = ', '.join(cast) if cast else 'No disponible'
-        
-        logger.info(f"Información encontrada en TMDB para '{title}': {title_name} ({year})")
+            info['cast'] = ', '.join(cast)
+        else:
+            info['cast'] = 'No disponible'
+
+        # Información adicional para series
+        if media_type == 'tv':
+            # Mapear el estado de la serie al español
+            status_map = {
+                'Returning Series': 'En emisión',
+                'Ended': 'Finalizada',
+                'Canceled': 'Cancelada',
+                'In Production': 'En producción',
+                'Planned': 'Planificada'
+            }
+            status = item.get('status', 'Desconocido')
+            info['series_status'] = status_map.get(status, status)
+            
+            # Información sobre episodios y temporadas
+            num_seasons = item.get('number_of_seasons', '?')
+            num_episodes = item.get('number_of_episodes', '?')
+            info['total_episodes'] = f"{num_episodes} episodios en {num_seasons} temporadas"
+            info['content_type'] = 'series'
+        else:
+            info['content_type'] = 'movie'
+
+        logger.info(f"Información encontrada en TMDB para '{title}': {spanish_title} ({year})")
         return info
-        
+
     except Exception as e:
         logger.error(f"Error buscando en TMDB: {e}")
         return None
