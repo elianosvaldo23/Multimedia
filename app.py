@@ -3110,7 +3110,7 @@ async def finalize_current_content(update, context):
         imdb_info = current_content.get('imdb_info', {})
         
         # Determinar el tipo de contenido
-        content_type_header = "Serie 🎬" if current_content['content_type'] == 'series' else "Película 🍿"
+        content_type_header = "<blockquote>Serie 🎬</blockquote>" if current_content['content_type'] == 'series' else "<blockquote>Película 🍿</blockquote>"
         
         # Determinar el tipo de contenido y estado para series
         content_type_info = ""
@@ -3124,10 +3124,15 @@ async def finalize_current_content(update, context):
             spanish_title = imdb_info.get('title', current_content['title'])
             english_title = imdb_info.get('original_title', spanish_title)
             
-            description = (
-                f"{content_type_header}\n\n"
+            # Comprobar si los títulos son diferentes
+            title_section = (
                 f"<b>{spanish_title}</b> ✓\n"
                 f"<b>{english_title}</b> ✓\n\n"
+            ) if spanish_title.lower() != english_title.lower() else f"<b>{spanish_title}</b> ✓\n\n"
+            
+            description = (
+                f"{content_type_header}"
+                f"{title_section}"
                 f"📅 <b>Año:</b> {imdb_info.get('year', 'N/A')}\n"
                 f"⭐ <b>Calificación:</b> {imdb_info.get('rating', 'N/A')}/10\n"
                 f"{content_type_info}"
@@ -3140,7 +3145,7 @@ async def finalize_current_content(update, context):
         else:
             title = current_content.get('title', 'Sin título')
             description = (
-                f"{content_type_header}\n\n"
+                f"{content_type_header}"
                 f"<b>{title}</b> ✓\n\n"
                 f"<blockquote>No se encontró información adicional para este contenido.</blockquote>\n\n"
                 f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
@@ -3798,14 +3803,18 @@ async def search_imdb_info(title):
         # Determinar títulos y año según el tipo de contenido
         if media_type == 'movie':
             spanish_title = item.get('title', 'Título no disponible')
-            english_title = item_en.get('original_title', spanish_title)  # Usar original_title para películas
+            english_title = item_en.get('original_title', item.get('original_title', spanish_title))
             release_date = item.get('release_date', '')
             year = release_date[:4] if release_date else 'N/A'
         else:  # tv
             spanish_title = item.get('name', 'Título no disponible')
-            english_title = item_en.get('original_name', spanish_title)  # Usar original_name para series
+            english_title = item_en.get('original_name', item.get('original_name', spanish_title))
             first_air_date = item.get('first_air_date', '')
             year = first_air_date[:4] if first_air_date else 'N/A'
+
+        # Si los títulos son iguales (ignorando mayúsculas/minúsculas), usar solo el español
+        if spanish_title.lower() == english_title.lower():
+            english_title = spanish_title
 
         # Recopilar información
         info = {
