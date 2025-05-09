@@ -6140,12 +6140,22 @@ async def verify_channel_membership(update: Update, context: ContextTypes.DEFAUL
     query = update.callback_query
     await query.answer()
     
-    user_id = query.from_user.id
+    user = query.from_user
+    user_id = user.id
     
     # Verificar membresía en tiempo real
     is_member = await is_channel_member(user_id, context)
     
     if is_member:
+        # Asegurarse de que el usuario esté registrado
+        if not db.user_exists(user_id):
+            db.add_user(
+                user_id,
+                user.username,
+                user.first_name,
+                user.last_name
+            )
+        
         # Actualizar caché de verificación
         verification_cache = context.bot_data.setdefault('verification_cache', {})
         verification_cache[user_id] = datetime.now() + timedelta(minutes=30)
