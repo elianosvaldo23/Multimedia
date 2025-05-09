@@ -6519,50 +6519,77 @@ async def handle_upser_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def finalize_series_upload(update: Update, context: ContextTypes.DEFAULT_TYPE, status_message=None) -> None:
     """Finalizar el proceso de carga y subir la serie a los canales"""
-    episodes = context.user_data.get('upser_episodes', [])
-    cover_photo = context.user_data.get('upser_cover')
-    description = context.user_data.get('upser_description', "Sin descripción")
-    
-    # Verificar que tenemos todos los datos necesarios
-    if not episodes or not cover_photo:
-        if status_message:
-            await status_message.edit_text(
-                "<blockquote>❌ No hay suficientes datos para subir la serie.\n\n"
-                "Debes enviar al menos un capítulo y una imagen de portada.</blockquote>",
-                parse_mode=ParseMode.HTML
-            )
-        else:
-            await update.message.reply_text(
-                "<blockquote>❌ No hay suficientes datos para subir la serie.\n\n"
-                "Debes enviar al menos un capítulo y una imagen de portada.</blockquote>",
-                parse_mode=ParseMode.HTML
-            )
-        return
-   
-    # Usar el mensaje de estado para seguir el progreso o crear uno nuevo
-    if not status_message:
-        status_message = await update.message.reply_text(
-            "<blockquote>⏳ Procesando la serie y subiendo a los canales...</blockquote>",
-            parse_mode=ParseMode.HTML
-        )
-    
     try:
-        # 1. Crear un identificador único para esta serie
-        series_id = int(time.time())
-        
-        # 2. Extraer título de la descripción o pattern
-        title = context.user_data.get('upser_title')
-        series_pattern = context.user_data.get('upser_series_pattern')
-        
-        if not title and series_pattern:
-            title = series_pattern['base_name']
-        elif not title:
-            if "<b>" in description and "</b>" in description:
-                # Extraer texto entre etiquetas <b></b> (probablemente el título)
-                title_match = re.search(r'<b>(.*?)</b>', description)
-                title = title_match.group(1) if title_match else description.split('\n')[0]
-            else:
-                title = description.split('\n')[0] if '\n' in description else description[:50]
+        # Obtener datos de la serie
+        current_series = context.user_data.get('current_series', {})
+        if not current_series:
+            raise ValueError("No hay datos de serie para procesar")
+
+        # Verificar que tenemos los datos necesarios
+        episodes = current_series.get('episodes', [])
+        imdb_info = current_series.get('imdb_info', {})
+        title = current_series.get('title', 'Serie sin título')
+
+        if not episodes:
+            raise ValueError("No hay episodios para procesar")
+
+        # Crear o actualizar mensaje de estado
+        if not status_message:
+            status_message = await update.message.reply_text(
+                "<blockquote>⏳ Procesando serie...</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+
+        # 1. Obtener o descargar la portada
+        cover_photo = None
+        if imdb_info and imdb_info.get('poster_url'):
+            try:
+                await status_message.edit_text(
+                    f"<blockquote>📥 Descargando póster para {title}...</blockquote>",
+                    parse_mode=ParseMode.HTML
+                )
+                
+                # Descargar póster
+                poster_response = requests.get(imdb_info['poster_url'])
+                poster_response.raise_for_status()
+                poster_bytes = BytesIO(poster_response.content)
+                
+                # Enviar temporalmente para obtener el file_id
+                temp_msg = await context.bot.send_photo(
+                    chat_id=update.effective_chat.id,
+                    photo=poster_bytes,
+                    caption="Descargando portada..."
+                )
+                
+                cover_photo = temp_msg.photo[-1].file_id
+                await temp_msg.delete()
+                
+            except Exception as e:
+                logger.error(f"Error descargando póster: {e}")
+                # No lanzar error, continuaremos sin póster
+
+        # Si no tenemos portada, pedirla al usuario
+        if not cover_photo:
+            await status_message.edit_text(
+                "<blockquote>⚠️ No se pudo obtener la portada automáticamente.\n"
+                "Por favor, envía una imagen para usar como portada de la serie.</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+            context.user_data['upser_state'] = UPSER_STATE_COVER
+            return
+
+        # 2. Generar descripción
+        description = current_series.get('description')
+        if not description and imdb_info:
+            description = (
+                f"<b>{imdb_info['title']}</b> ({imdb_info.get('year', 'N/A')})\n\n"
+                f"⭐ <b>Calificación:</b> {imdb_info.get('rating', 'N/A')}/10\n"
+                f"🎭 <b>Género:</b> {imdb_info.get('genres', 'No disponible')}\n"
+                f"🎬 <b>Director:</b> {imdb_info.get('directors', 'No disponible')}\n"
+                f"👥 <b>Reparto:</b> {imdb_info.get('cast', 'No disponible')}\n\n"
+                f"📝 <b>Sinopsis:</b>\n<blockquote expandable>{imdb_info.get('plot', 'No disponible')}</blockquote>\n\n"
+                f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
+            )
         
         # 3. Subir la portada con descripción al canal de búsqueda
         await status_message.edit_text(
