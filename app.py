@@ -81,10 +81,11 @@ MULTI_SEASONS_STATE_RECEIVING = 1   # Recibiendo capítulos de temporada actual
 MULTI_SEASONS_STATE_COVER = 2       # Esperando portada con descripción
 MULTI_SEASONS_STATE_NEW_SEASON = 3  # Esperando nombre de nueva temporada
 
-SER_STATE_IDLE = 0        # No active process
-SER_STATE_WAITING_NAME = 1 # Waiting for series name
-SER_STATE_RECEIVING = 2   # Receiving episodes for current season
-SER_STATE_NEW_SEASON = 3  # Waiting for new season name
+# Constantes para el comando ser
+SER_STATE_IDLE = 0
+SER_STATE_WAITING_NAME = 1
+SER_STATE_RECEIVING = 2
+SER_STATE_COVER = 3
 
 # Enable logging
 logging.basicConfig(
@@ -616,114 +617,109 @@ async def ser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         context.user_data.pop('current_series', None)
 
 async def season_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Comando para indicar la temporada actual durante la carga"""
-    # Verificar que el usuario es administrador
-    if not update.effective_user or update.effective_user.id != ADMIN_ID:
-        return
-
-    # Verificar si estamos en modo de carga de series
-    if context.user_data.get('ser_state') != 'WAITING_FILES':
-        await update.message.reply_text(
-            "<blockquote>⚠️ Debes iniciar primero el proceso con /ser</blockquote>",
-            parse_mode=ParseMode.HTML
-        )
-        return
-
-    # Verificar argumentos
-    if not context.args:
-        await update.message.reply_text(
-            "Uso: /season número\n"
-            "Ejemplo: /season 1",
-            parse_mode=ParseMode.HTML
-        )
-        return
-
+    """Comando para indicar la temporada actual"""
     try:
-        season_number = int(context.args[0])
-        current_series = context.user_data.get('current_series', {})
-        
-        if not current_series.get('name'):
+        if not update.effective_user or update.effective_user.id != ADMIN_ID:
+            return
+
+        if context.user_data.get('ser_state') != SER_STATE_RECEIVING:
             await update.message.reply_text(
-                "<blockquote>⚠️ Primero debes especificar el nombre de la serie.</blockquote>",
+                "<blockquote>⚠️ Debes iniciar primero el proceso con /ser</blockquote>",
                 parse_mode=ParseMode.HTML
             )
             return
 
-        # Inicializar la temporada si no existe
-        if str(season_number) not in current_series['seasons']:
-            current_series['seasons'][str(season_number)] = []
+        if not context.args:
+            await update.message.reply_text(
+                "Uso: /season número\n"
+                "Ejemplo: /season 1",
+                parse_mode=ParseMode.HTML
+            )
+            return
 
-        current_series['current_season'] = str(season_number)
-        
-        await update.message.reply_text(
-            f"<blockquote>✅ Ahora trabajando en la Temporada {season_number}\n"
-            f"Envía todos los capítulos de esta temporada.</blockquote>",
-            parse_mode=ParseMode.HTML
-        )
+        try:
+            season_number = int(context.args[0])
+            current_series = context.user_data.get('current_series', {})
+            
+            if not current_series.get('name'):
+                await update.message.reply_text(
+                    "<blockquote>⚠️ Primero debes especificar el nombre de la serie.</blockquote>",
+                    parse_mode=ParseMode.HTML
+                )
+                return
 
-    except ValueError:
+            if str(season_number) not in current_series['seasons']:
+                current_series['seasons'][str(season_number)] = []
+
+            current_series['current_season'] = str(season_number)
+            
+            await update.message.reply_text(
+                f"<blockquote>✅ Ahora trabajando en la Temporada {season_number}\n"
+                f"Envía todos los capítulos de esta temporada.</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+
+        except ValueError:
+            await update.message.reply_text(
+                "<blockquote>❌ El número de temporada debe ser un número entero.</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+
+    except Exception as e:
+        logger.error(f"Error: {e}")
         await update.message.reply_text(
-            "<blockquote>❌ El número de temporada debe ser un número entero.</blockquote>",
+            "<blockquote>❌ Ocurrió un error. Por favor, intenta nuevamente.</blockquote>",
             parse_mode=ParseMode.HTML
         )
 
 async def handle_series_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manejar la recepción del nombre de la serie"""
-    # Verificar que el usuario es administrador
-    if not update.effective_user or update.effective_user.id != ADMIN_ID:
-        return
-
-    # Verificar si estamos esperando el nombre
-    if context.user_data.get('ser_state') != 'WAITING_NAME':
-        return
-
-    series_name = update.message.text.strip()
-    status_message = await update.message.reply_text(
-        f"<blockquote>🔍 Buscando información para: <b>{series_name}</b>...</blockquote>",
-        parse_mode=ParseMode.HTML
-    )
-
     try:
-        # Buscar información en TMDB
+        if not update.effective_user or update.effective_user.id != ADMIN_ID:
+            return
+
+        if context.user_data.get('ser_state') != SER_STATE_WAITING_NAME:
+            return
+
+        series_name = update.message.text.strip()
+        status_message = await update.message.reply_text(
+            f"<blockquote>🔍 Buscando información para: <b>{series_name}</b>...</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+
         imdb_info = await search_imdb_info(series_name)
         
+        context.user_data['current_series']['name'] = imdb_info['title'] if imdb_info else series_name
+        context.user_data['current_series']['imdb_info'] = imdb_info
+        
         if imdb_info:
-            context.user_data['current_series']['name'] = imdb_info['title']
-            context.user_data['current_series']['imdb_info'] = imdb_info
-            
             # Mostrar información encontrada
+            preview_text = (
+                f"✅ <b>{imdb_info['title']}</b> ({imdb_info.get('year', 'N/A')})\n\n"
+                f"⭐ <b>Calificación:</b> {imdb_info.get('rating', 'N/A')}/10\n"
+                f"🎭 <b>Género:</b> {imdb_info.get('genres', 'No disponible')}\n\n"
+                f"<blockquote>Ahora usa /season número para indicar la temporada\n"
+                f"Ejemplo: /season 1</blockquote>"
+            )
+            
             if imdb_info.get('poster_url'):
                 try:
-                    # Descargar y mostrar póster
                     poster_response = requests.get(imdb_info['poster_url'])
                     poster_response.raise_for_status()
                     poster_bytes = BytesIO(poster_response.content)
                     
-                    preview_text = (
-                        f"✅ <b>{imdb_info['title']}</b> ({imdb_info.get('year', 'N/A')})\n\n"
-                        f"⭐ <b>Calificación:</b> {imdb_info.get('rating', 'N/A')}/10\n"
-                        f"🎭 <b>Género:</b> {imdb_info.get('genres', 'No disponible')}\n\n"
-                        f"<blockquote>Ahora usa /season número para indicar la temporada\n"
-                        f"Ejemplo: /season 1</blockquote>"
-                    )
-                    
-                    temp_msg = await context.bot.send_photo(
+                    await context.bot.send_photo(
                         chat_id=update.effective_chat.id,
                         photo=poster_bytes,
                         caption=preview_text,
                         parse_mode=ParseMode.HTML
                     )
-                    
-                    # Guardar el file_id del póster
-                    context.user_data['current_series']['cover_photo'] = temp_msg.photo[-1].file_id
-                    
+                    await status_message.delete()
                 except Exception as e:
                     logger.error(f"Error descargando póster: {e}")
-                    await status_message.edit_text(
-                        f"<blockquote>✅ Información encontrada pero no se pudo descargar el póster\n"
-                        f"Usa /season número para empezar con la primera temporada</blockquote>",
-                        parse_mode=ParseMode.HTML
-                    )
+                    await status_message.edit_text(preview_text, parse_mode=ParseMode.HTML)
+            else:
+                await status_message.edit_text(preview_text, parse_mode=ParseMode.HTML)
         else:
             await status_message.edit_text(
                 f"<blockquote>⚠️ No se encontró información para {series_name}\n"
@@ -732,114 +728,111 @@ async def handle_series_name(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 parse_mode=ParseMode.HTML
             )
 
-        # Cambiar estado a espera de archivos
-        context.user_data['ser_state'] = 'WAITING_FILES'
+        context.user_data['ser_state'] = SER_STATE_RECEIVING
 
     except Exception as e:
-        logger.error(f"Error buscando información: {e}")
-        await status_message.edit_text(
-            f"<blockquote>❌ Error buscando información: {str(e)[:100]}\n"
-            f"Usa /season número para continuar de todos modos</blockquote>",
+        logger.error(f"Error: {e}")
+        await update.message.reply_text(
+            "<blockquote>❌ Ocurrió un error. Por favor, intenta nuevamente.</blockquote>",
             parse_mode=ParseMode.HTML
         )
 
 async def cancel_ser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Cancelar el proceso de carga de series"""
-    # Verificar que el usuario es administrador
-    if not update.effective_user or update.effective_user.id != ADMIN_ID:
-        return
+    try:
+        if not update.effective_user or update.effective_user.id != ADMIN_ID:
+            return
 
-    # Reiniciar el estado
-    context.user_data['ser_state'] = 'INACTIVE'
-    context.user_data['current_series'] = None
+        context.user_data['ser_state'] = SER_STATE_IDLE
+        context.user_data.pop('current_series', None)
 
-    await update.message.reply_text(
-        "<blockquote>❌ Proceso de carga de series cancelado.\n"
-        "Todos los datos temporales han sido eliminados.</blockquote>",
-        parse_mode=ParseMode.HTML
-    )
-
-async def handle_series_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Manejar la recepción de capítulos para la serie"""
-    # Verificar que el usuario es administrador
-    if not update.effective_user or update.effective_user.id != ADMIN_ID:
-        return
-
-    # Verificar si estamos en modo de carga de series
-    if context.user_data.get('ser_state') != 'WAITING_FILES':
-        return
-
-    # Verificar que tenemos una temporada seleccionada
-    current_series = context.user_data.get('current_series', {})
-    current_season = current_series.get('current_season')
-
-    if not current_season:
         await update.message.reply_text(
-            "<blockquote>⚠️ Primero debes seleccionar una temporada con /season número</blockquote>",
+            "<blockquote>❌ Proceso de carga de series cancelado.\n"
+            "Todos los datos temporales han sido eliminados.</blockquote>",
             parse_mode=ParseMode.HTML
         )
-        return
 
-    # Procesar video o documento
-    if update.message.video or update.message.document:
-        message_id = update.message.message_id
-        chat_id = update.effective_chat.id
-        original_caption = update.message.caption or ""
-        file_name = update.message.document.file_name if update.message.document else None
+    except Exception as e:
+        logger.error(f"Error: {e}")
+        await update.message.reply_text(
+            "<blockquote>❌ Ocurrió un error. Por favor, intenta nuevamente.</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
 
-        # Determinar número de episodio
-        episode_num = len(current_series['seasons'][current_season]) + 1
-        episode_pattern = re.search(r'[Ee](\d+)|[Ee]pisod[ei]o\s*(\d+)|[Cc]ap[ií]tulo\s*(\d+)', original_caption or file_name or '')
-        
-        if episode_pattern:
-            for group in episode_pattern.groups():
-                if group:
-                    episode_num = int(group)
-                    break
+async def handle_series_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manejar la recepción de capítulos de la serie"""
+    try:
+        if not update.effective_user or update.effective_user.id != ADMIN_ID:
+            return
 
-        # Crear nuevo caption
-        new_caption = f"{current_series['name']} - Temporada {current_season} Capítulo {episode_num}"
+        if context.user_data.get('ser_state') != SER_STATE_RECEIVING:
+            return
 
-        # Reenviar con nuevo caption
-        try:
-            if update.message.video:
-                file_id = update.message.video.file_id
-                new_message = await context.bot.send_video(
-                    chat_id=chat_id,
-                    video=file_id,
-                    caption=new_caption
-                )
-            else:
-                file_id = update.message.document.file_id
-                new_message = await context.bot.send_document(
-                    chat_id=chat_id,
-                    document=file_id,
-                    caption=new_caption
-                )
+        current_series = context.user_data.get('current_series', {})
+        current_season = current_series.get('current_season')
 
-            # Guardar información del episodio
-            episode_data = {
-                'message_id': new_message.message_id,
-                'episode_number': episode_num,
-                'chat_id': chat_id,
-                'caption': new_caption
-            }
-
-            # Añadir a la temporada actual
-            current_series['seasons'][current_season].append(episode_data)
-
+        if not current_season:
             await update.message.reply_text(
-                f"<blockquote>✅ Capítulo {episode_num} añadido a Temporada {current_season}\n"
-                f"Total de capítulos en esta temporada: {len(current_series['seasons'][current_season])}</blockquote>",
+                "<blockquote>⚠️ Primero debes seleccionar una temporada con /season número</blockquote>",
                 parse_mode=ParseMode.HTML
             )
+            return
 
-        except Exception as e:
-            logger.error(f"Error procesando episodio: {e}")
-            await update.message.reply_text(
-                f"<blockquote>❌ Error procesando el episodio: {str(e)[:100]}</blockquote>",
-                parse_mode=ParseMode.HTML
-            )
+        if update.message.video or update.message.document:
+            message_id = update.message.message_id
+            chat_id = update.effective_chat.id
+            original_caption = update.message.caption or ""
+            file_name = update.message.document.file_name if update.message.document else None
+
+            episode_num = len(current_series['seasons'][current_season]) + 1
+            
+            # Crear nuevo caption
+            new_caption = f"{current_series['name']} - Temporada {current_season} Capítulo {episode_num}"
+
+            try:
+                if update.message.video:
+                    file_id = update.message.video.file_id
+                    new_message = await context.bot.send_video(
+                        chat_id=chat_id,
+                        video=file_id,
+                        caption=new_caption
+                    )
+                else:
+                    file_id = update.message.document.file_id
+                    new_message = await context.bot.send_document(
+                        chat_id=chat_id,
+                        document=file_id,
+                        caption=new_caption
+                    )
+
+                episode_data = {
+                    'message_id': new_message.message_id,
+                    'episode_number': episode_num,
+                    'chat_id': chat_id,
+                    'caption': new_caption
+                }
+
+                current_series['seasons'][current_season].append(episode_data)
+
+                await update.message.reply_text(
+                    f"<blockquote>✅ Capítulo {episode_num} añadido a Temporada {current_season}\n"
+                    f"Total de capítulos en esta temporada: {len(current_series['seasons'][current_season])}</blockquote>",
+                    parse_mode=ParseMode.HTML
+                )
+
+            except Exception as e:
+                logger.error(f"Error al procesar capítulo: {e}")
+                await update.message.reply_text(
+                    "<blockquote>❌ Error al procesar el capítulo. Por favor, intenta nuevamente.</blockquote>",
+                    parse_mode=ParseMode.HTML
+                )
+
+    except Exception as e:
+        logger.error(f"Error: {e}")
+        await update.message.reply_text(
+            "<blockquote>❌ Ocurrió un error. Por favor, intenta nuevamente.</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
             
 async def finalize_multi_series_upload(update, context):
     """Finalizar el proceso y subir la serie con múltiples temporadas"""
@@ -1378,215 +1371,6 @@ async def cancel_multi_command(update: Update, context: ContextTypes.DEFAULT_TYP
         "Todos los datos temporales han sido eliminados.</blockquote>",
         parse_mode=ParseMode.HTML
     )
-
-
-async def ser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Command for admins to add series with multiple seasons"""
-    user = update.effective_user
-    
-    # Verify admin status
-    if user.id != ADMIN_ID:
-        return
-    
-    # Get current state
-    ser_state = context.user_data.get('ser_state', SER_STATE_IDLE)
-    
-    # If in IDLE state, start process
-    if ser_state == SER_STATE_IDLE:
-        # Initialize data structure
-        context.user_data['ser_data'] = {
-            'series_id': int(time.time()),  # Unique ID for series
-            'title': None,
-            'imdb_info': None,
-            'seasons': {},  # Dictionary to store seasons
-            'current_season': None,
-            'cover': None,
-            'description': None
-        }
-        
-        # Change to waiting for name state
-        context.user_data['ser_state'] = SER_STATE_WAITING_NAME
-        
-        await update.message.reply_text(
-            "📺 <b>Multiple Seasons Series Upload Mode</b>\n\n"
-            "<blockquote>"
-            "1️⃣ Send the series name to search for information\n"
-            "2️⃣ Then send the first season name\n"
-            "3️⃣ Send all episodes for that season\n"
-            "4️⃣ To add another season, send /ser again\n"
-            "5️⃣ When finished with all seasons, send an image with description\n"
-            "</blockquote>\n"
-            "To cancel the process, send /cancelser",
-            parse_mode=ParseMode.HTML
-        )
-    
-    # If waiting for episodes, change to new season
-    elif ser_state == SER_STATE_RECEIVING:
-        # Check if current season has episodes
-        current_season = context.user_data['ser_data']['current_season']
-        if current_season and context.user_data['ser_data']['seasons'].get(current_season, []):
-            # Has episodes, ask for new season name
-            context.user_data['ser_state'] = SER_STATE_NEW_SEASON
-            await update.message.reply_text(
-                "<blockquote>✅ Current season completed.\n"
-                "Send the name of the next season:</blockquote>",
-                parse_mode=ParseMode.HTML
-            )
-        else:
-            await update.message.reply_text(
-                "<blockquote>⚠️ Current season has no episodes.\n"
-                "Please send some episodes first.</blockquote>",
-                parse_mode=ParseMode.HTML
-            )
-            
-    # If waiting for new season, process name
-    elif ser_state == SER_STATE_NEW_SEASON:
-        if not context.args:
-            await update.message.reply_text(
-                "<blockquote>⚠️ Send the season name after the command.\n"
-                "Example: /ser Season 2</blockquote>",
-                parse_mode=ParseMode.HTML
-            )
-            return
-            
-        season_name = " ".join(context.args)
-        context.user_data['ser_data']['current_season'] = season_name
-        context.user_data['ser_data']['seasons'][season_name] = []
-        context.user_data['ser_state'] = SER_STATE_RECEIVING
-        
-        await update.message.reply_text(
-            f"<blockquote>✅ New season started: <b>{season_name}</b>\n"
-            f"Now send the episodes for this season.</blockquote>",
-            parse_mode=ParseMode.HTML
-        )
-
-async def cancel_ser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Cancel the series upload process"""
-    if update.effective_user.id != ADMIN_ID:
-        return
-        
-    if 'ser_state' in context.user_data:
-        context.user_data['ser_state'] = SER_STATE_IDLE
-        context.user_data['ser_data'] = None
-        
-        await update.message.reply_text(
-            "<blockquote>✅ Series upload process cancelled.</blockquote>",
-            parse_mode=ParseMode.HTML
-        )
-
-async def handle_ser_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle text and file input for ser command"""
-    # Verify admin status
-    if update.effective_user.id != ADMIN_ID:
-        return
-        
-    # Check current state
-    ser_state = context.user_data.get('ser_state')
-    if not ser_state or ser_state == SER_STATE_IDLE:
-        return
-        
-    # Handle series name
-    if ser_state == SER_STATE_WAITING_NAME:
-        if not update.message.text:
-            return
-            
-        series_name = update.message.text.strip()
-        
-        # Search TMDB information
-        status_message = await update.message.reply_text(
-            f"<blockquote>🔍 Searching information for: <b>{series_name}</b>...</blockquote>",
-            parse_mode=ParseMode.HTML
-        )
-        
-        imdb_info = await search_imdb_info(series_name)
-        if imdb_info:
-            context.user_data['ser_data']['title'] = imdb_info['title']
-            context.user_data['ser_data']['imdb_info'] = imdb_info
-            
-            # Show found information
-            await status_message.edit_text(
-                f"<blockquote>✅ Information found for: <b>{imdb_info['title']}</b>\n\n"
-                f"Now send the name of the first season.</blockquote>",
-                parse_mode=ParseMode.HTML
-            )
-            
-            context.user_data['ser_state'] = SER_STATE_NEW_SEASON
-        else:
-            await status_message.edit_text(
-                f"<blockquote>❌ No information found for: <b>{series_name}</b>\n"
-                f"Try another name or continue without information.</blockquote>",
-                parse_mode=ParseMode.HTML
-            )
-            
-    # Handle episode files
-    elif ser_state == SER_STATE_RECEIVING:
-        if not (update.message.video or update.message.document):
-            return
-            
-        current_season = context.user_data['ser_data']['current_season']
-        if not current_season:
-            await update.message.reply_text(
-                "<blockquote>⚠️ Error: No season selected.\n"
-                "Use /ser to start a new season.</blockquote>",
-                parse_mode=ParseMode.HTML
-            )
-            return
-            
-        # Process file
-        file_data = {
-            'message_id': update.message.message_id,
-            'chat_id': update.effective_chat.id,
-            'caption': update.message.caption or "",
-            'file_name': update.message.document.file_name if update.message.document else None
-        }
-        
-        # Rename file according to series pattern
-        series_title = context.user_data['ser_data']['title']
-        episode_number = len(context.user_data['ser_data']['seasons'][current_season]) + 1
-        
-        # Extract season number from name
-        season_number = 1
-        season_match = re.search(r'temporada\s*(\d+)', current_season.lower())
-        if season_match:
-            season_number = int(season_match.group(1))
-            
-        new_caption = f"{series_title} {season_number:02d}x{episode_number:02d}"
-        
-        try:
-            # Forward with new name
-            if update.message.video:
-                new_message = await context.bot.send_video(
-                    chat_id=update.effective_chat.id,
-                    video=update.message.video.file_id,
-                    caption=new_caption
-                )
-            else:
-                new_message = await context.bot.send_document(
-                    chat_id=update.effective_chat.id,
-                    document=update.message.document.file_id,
-                    caption=new_caption
-                )
-                
-            # Update file information
-            file_data['message_id'] = new_message.message_id
-            file_data['caption'] = new_caption
-            
-            # Save in current season
-            context.user_data['ser_data']['seasons'][current_season].append(file_data)
-            
-            await update.message.reply_text(
-                f"<blockquote>✅ Episode {episode_number} added to {current_season}\n"
-                f"Name: <b>{new_caption}</b></blockquote>",
-                parse_mode=ParseMode.HTML
-            )
-            
-        except Exception as e:
-            logger.error(f"Error processing episode: {e}")
-            await update.message.reply_text(
-                "<blockquote>❌ Error processing episode.\n"
-                "Please try again.</blockquote>",
-                parse_mode=ParseMode.HTML
-            )
 
 async def handle_multi_seasons_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manejar la recepción de capítulos y portada durante el proceso de carga de series multi-temporada"""
