@@ -82,10 +82,10 @@ MULTI_SEASONS_STATE_COVER = 2       # Esperando portada con descripción
 MULTI_SEASONS_STATE_NEW_SEASON = 3  # Esperando nombre de nueva temporada
 
 # Constantes para el comando ser
-SER_STATE_IDLE = 0
-SER_STATE_WAITING_NAME = 1
-SER_STATE_RECEIVING = 2
-SER_STATE_COVER = 3
+SER_STATE_IDLE = 'IDLE'
+SER_STATE_WAITING_NAME = 'WAITING_NAME'
+SER_STATE_RECEIVING = 'RECEIVING'
+SER_STATE_COVER = 'COVER'
 
 # Enable logging
 logging.basicConfig(
@@ -515,13 +515,13 @@ async def ser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             return
 
         # Obtener el estado actual
-        ser_state = context.user_data.get('ser_state', 'INACTIVE')
+        ser_state = context.user_data.get('ser_state', SER_STATE_IDLE)
 
         # Si estamos inactivos, iniciar el proceso
-        if ser_state == 'INACTIVE':
+        if ser_state == SER_STATE_IDLE:
             try:
                 # Inicializar estructura de datos para la serie con múltiples temporadas
-                context.user_data['ser_state'] = 'WAITING_NAME'
+                context.user_data['ser_state'] = SER_STATE_WAITING_NAME
                 context.user_data['current_series'] = {
                     'name': None,
                     'imdb_info': None,
@@ -565,7 +565,7 @@ async def ser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                     parse_mode=ParseMode.HTML
                 )
                 # Limpiar estado en caso de error
-                context.user_data['ser_state'] = 'INACTIVE'
+                context.user_data['ser_state'] = SER_STATE_IDLE
                 context.user_data.pop('current_series', None)
 
         # Si ya estamos en proceso y recibimos /ser de nuevo, finalizar
@@ -613,7 +613,7 @@ async def ser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             parse_mode=ParseMode.HTML
         )
         # Asegurar que el estado se reinicie en caso de error crítico
-        context.user_data['ser_state'] = 'INACTIVE'
+        context.user_data['ser_state'] = SER_STATE_IDLE
         context.user_data.pop('current_series', None)
 
 async def season_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -679,7 +679,7 @@ async def handle_series_name(update: Update, context: ContextTypes.DEFAULT_TYPE)
         if not update.effective_user or update.effective_user.id != ADMIN_ID:
             return
 
-        # Verificar el estado explícitamente
+        # Verificar explícitamente el estado
         current_state = context.user_data.get('ser_state')
         if current_state != SER_STATE_WAITING_NAME:
             # Si no estamos esperando el nombre, ignorar el mensaje
@@ -764,11 +764,22 @@ async def handle_series_name(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def cancel_ser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Cancelar el proceso de carga de series"""
     try:
+        # Verificar que el usuario es administrador
         if not update.effective_user or update.effective_user.id != ADMIN_ID:
             return
 
+        # Verificar si hay un proceso activo
+        if context.user_data.get('ser_state', SER_STATE_IDLE) == SER_STATE_IDLE:
+            await update.message.reply_text(
+                "<blockquote>ℹ️ No hay ningún proceso de carga activo para cancelar.</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+            return
+
+        # Reiniciar el estado
         context.user_data['ser_state'] = SER_STATE_IDLE
         context.user_data.pop('current_series', None)
+        context.user_data.pop('status_message', None)
 
         await update.message.reply_text(
             "<blockquote>❌ Proceso de carga de series cancelado.\n"
@@ -779,9 +790,12 @@ async def cancel_ser_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     except Exception as e:
         logger.error(f"Error: {e}")
         await update.message.reply_text(
-            "<blockquote>❌ Ocurrió un error. Por favor, intenta nuevamente.</blockquote>",
+            "<blockquote>❌ Ocurrió un error al cancelar. El estado ha sido reiniciado.</blockquote>",
             parse_mode=ParseMode.HTML
         )
+        # Asegurar que el estado se reinicia incluso si hay un error
+        context.user_data['ser_state'] = SER_STATE_IDLE
+        context.user_data.pop('current_series', None)
 
 async def handle_series_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manejar la recepción de capítulos de la serie"""
@@ -7024,7 +7038,7 @@ def main() -> None:
     application.add_handler(MessageHandler(
         (filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
         handle_series_content
-    ), group=-12)
+    ), group=-15)
 
     # Grupo -11: Handlers para el comando add
     application.add_handler(MessageHandler(
