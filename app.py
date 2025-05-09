@@ -81,10 +81,6 @@ MULTI_SEASONS_STATE_RECEIVING = 1   # Recibiendo capítulos de temporada actual
 MULTI_SEASONS_STATE_COVER = 2       # Esperando portada con descripción
 MULTI_SEASONS_STATE_NEW_SEASON = 3  # Esperando nombre de nueva temporada
 
-SER_STATE_IDLE = 0        # No active process
-SER_STATE_WAITING_NAME = 1 # Waiting for series name
-SER_STATE_RECEIVING = 2   # Receiving episodes for current season
-SER_STATE_NEW_SEASON = 3  # Waiting for new season name
 
 # Enable logging
 logging.basicConfig(
@@ -881,215 +877,6 @@ async def cancel_multi_command(update: Update, context: ContextTypes.DEFAULT_TYP
         "Todos los datos temporales han sido eliminados.</blockquote>",
         parse_mode=ParseMode.HTML
     )
-
-
-async def ser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Command for admins to add series with multiple seasons"""
-    user = update.effective_user
-    
-    # Verify admin status
-    if user.id != ADMIN_ID:
-        return
-    
-    # Get current state
-    ser_state = context.user_data.get('ser_state', SER_STATE_IDLE)
-    
-    # If in IDLE state, start process
-    if ser_state == SER_STATE_IDLE:
-        # Initialize data structure
-        context.user_data['ser_data'] = {
-            'series_id': int(time.time()),  # Unique ID for series
-            'title': None,
-            'imdb_info': None,
-            'seasons': {},  # Dictionary to store seasons
-            'current_season': None,
-            'cover': None,
-            'description': None
-        }
-        
-        # Change to waiting for name state
-        context.user_data['ser_state'] = SER_STATE_WAITING_NAME
-        
-        await update.message.reply_text(
-            "📺 <b>Multiple Seasons Series Upload Mode</b>\n\n"
-            "<blockquote>"
-            "1️⃣ Send the series name to search for information\n"
-            "2️⃣ Then send the first season name\n"
-            "3️⃣ Send all episodes for that season\n"
-            "4️⃣ To add another season, send /ser again\n"
-            "5️⃣ When finished with all seasons, send an image with description\n"
-            "</blockquote>\n"
-            "To cancel the process, send /cancelser",
-            parse_mode=ParseMode.HTML
-        )
-    
-    # If waiting for episodes, change to new season
-    elif ser_state == SER_STATE_RECEIVING:
-        # Check if current season has episodes
-        current_season = context.user_data['ser_data']['current_season']
-        if current_season and context.user_data['ser_data']['seasons'].get(current_season, []):
-            # Has episodes, ask for new season name
-            context.user_data['ser_state'] = SER_STATE_NEW_SEASON
-            await update.message.reply_text(
-                "<blockquote>✅ Current season completed.\n"
-                "Send the name of the next season:</blockquote>",
-                parse_mode=ParseMode.HTML
-            )
-        else:
-            await update.message.reply_text(
-                "<blockquote>⚠️ Current season has no episodes.\n"
-                "Please send some episodes first.</blockquote>",
-                parse_mode=ParseMode.HTML
-            )
-            
-    # If waiting for new season, process name
-    elif ser_state == SER_STATE_NEW_SEASON:
-        if not context.args:
-            await update.message.reply_text(
-                "<blockquote>⚠️ Send the season name after the command.\n"
-                "Example: /ser Season 2</blockquote>",
-                parse_mode=ParseMode.HTML
-            )
-            return
-            
-        season_name = " ".join(context.args)
-        context.user_data['ser_data']['current_season'] = season_name
-        context.user_data['ser_data']['seasons'][season_name] = []
-        context.user_data['ser_state'] = SER_STATE_RECEIVING
-        
-        await update.message.reply_text(
-            f"<blockquote>✅ New season started: <b>{season_name}</b>\n"
-            f"Now send the episodes for this season.</blockquote>",
-            parse_mode=ParseMode.HTML
-        )
-
-async def cancel_ser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Cancel the series upload process"""
-    if update.effective_user.id != ADMIN_ID:
-        return
-        
-    if 'ser_state' in context.user_data:
-        context.user_data['ser_state'] = SER_STATE_IDLE
-        context.user_data['ser_data'] = None
-        
-        await update.message.reply_text(
-            "<blockquote>✅ Series upload process cancelled.</blockquote>",
-            parse_mode=ParseMode.HTML
-        )
-
-async def handle_ser_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle text and file input for ser command"""
-    # Verify admin status
-    if update.effective_user.id != ADMIN_ID:
-        return
-        
-    # Check current state
-    ser_state = context.user_data.get('ser_state')
-    if not ser_state or ser_state == SER_STATE_IDLE:
-        return
-        
-    # Handle series name
-    if ser_state == SER_STATE_WAITING_NAME:
-        if not update.message.text:
-            return
-            
-        series_name = update.message.text.strip()
-        
-        # Search TMDB information
-        status_message = await update.message.reply_text(
-            f"<blockquote>🔍 Searching information for: <b>{series_name}</b>...</blockquote>",
-            parse_mode=ParseMode.HTML
-        )
-        
-        imdb_info = await search_imdb_info(series_name)
-        if imdb_info:
-            context.user_data['ser_data']['title'] = imdb_info['title']
-            context.user_data['ser_data']['imdb_info'] = imdb_info
-            
-            # Show found information
-            await status_message.edit_text(
-                f"<blockquote>✅ Information found for: <b>{imdb_info['title']}</b>\n\n"
-                f"Now send the name of the first season.</blockquote>",
-                parse_mode=ParseMode.HTML
-            )
-            
-            context.user_data['ser_state'] = SER_STATE_NEW_SEASON
-        else:
-            await status_message.edit_text(
-                f"<blockquote>❌ No information found for: <b>{series_name}</b>\n"
-                f"Try another name or continue without information.</blockquote>",
-                parse_mode=ParseMode.HTML
-            )
-            
-    # Handle episode files
-    elif ser_state == SER_STATE_RECEIVING:
-        if not (update.message.video or update.message.document):
-            return
-            
-        current_season = context.user_data['ser_data']['current_season']
-        if not current_season:
-            await update.message.reply_text(
-                "<blockquote>⚠️ Error: No season selected.\n"
-                "Use /ser to start a new season.</blockquote>",
-                parse_mode=ParseMode.HTML
-            )
-            return
-            
-        # Process file
-        file_data = {
-            'message_id': update.message.message_id,
-            'chat_id': update.effective_chat.id,
-            'caption': update.message.caption or "",
-            'file_name': update.message.document.file_name if update.message.document else None
-        }
-        
-        # Rename file according to series pattern
-        series_title = context.user_data['ser_data']['title']
-        episode_number = len(context.user_data['ser_data']['seasons'][current_season]) + 1
-        
-        # Extract season number from name
-        season_number = 1
-        season_match = re.search(r'temporada\s*(\d+)', current_season.lower())
-        if season_match:
-            season_number = int(season_match.group(1))
-            
-        new_caption = f"{series_title} {season_number:02d}x{episode_number:02d}"
-        
-        try:
-            # Forward with new name
-            if update.message.video:
-                new_message = await context.bot.send_video(
-                    chat_id=update.effective_chat.id,
-                    video=update.message.video.file_id,
-                    caption=new_caption
-                )
-            else:
-                new_message = await context.bot.send_document(
-                    chat_id=update.effective_chat.id,
-                    document=update.message.document.file_id,
-                    caption=new_caption
-                )
-                
-            # Update file information
-            file_data['message_id'] = new_message.message_id
-            file_data['caption'] = new_caption
-            
-            # Save in current season
-            context.user_data['ser_data']['seasons'][current_season].append(file_data)
-            
-            await update.message.reply_text(
-                f"<blockquote>✅ Episode {episode_number} added to {current_season}\n"
-                f"Name: <b>{new_caption}</b></blockquote>",
-                parse_mode=ParseMode.HTML
-            )
-            
-        except Exception as e:
-            logger.error(f"Error processing episode: {e}")
-            await update.message.reply_text(
-                "<blockquote>❌ Error processing episode.\n"
-                "Please try again.</blockquote>",
-                parse_mode=ParseMode.HTML
-            )
 
 async def handle_multi_seasons_input(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manejar la recepción de capítulos y portada durante el proceso de carga de series multi-temporada"""
@@ -6673,16 +6460,15 @@ def main() -> None:
     application.add_handler(CommandHandler("imdb", imdb_command))
     application.add_handler(CommandHandler("plan", set_user_plan))
     application.add_handler(CommandHandler("a", a_command))
-    application.add_handler(CommandHandler("ser", ser_command))
-    application.add_handler(CommandHandler("cancelser", cancel_ser_command))
     application.add_handler(CommandHandler("cancelmulti", cancel_multi_command))
     application.add_handler(CommandHandler("repairmulti", repair_multi_series))
     application.add_handler(CommandHandler("load", load_command))
+    application.add_handler(CommandHandler("cancelmulti", cancel_multi_command))
     application.add_handler(CommandHandler("upser", upser_command))
     application.add_handler(CommandHandler("diagnosemulti", diagnose_multi_series))
-    application.add_handler(CommandHandler("fixseasons", fix_seasons))
-    application.add_handler(CommandHandler("migrateepisodes", migrate_episodes))
-    application.add_handler(CommandHandler("confirmmigrate", confirm_migrate))
+    application.add_handler(CommandHandler("fixseasons", fix_seasons))  # Nuevo comando para corregir temporadas
+    application.add_handler(CommandHandler("migrateepisodes", migrate_episodes))  # Nuevo comando para migrar episodios
+    application.add_handler(CommandHandler("confirmmigrate", confirm_migrate))  # Comando para confirmar migración
     application.add_handler(CommandHandler("cancelupser", cancel_upser_command))
     application.add_handler(CommandHandler("add", add_command))
     application.add_handler(CommandHandler("canceladd", cancel_add_command))
@@ -6695,84 +6481,71 @@ def main() -> None:
     application.add_handler(CommandHandler("stats", stats))
     application.add_handler(CommandHandler("broadcast", broadcast))
     
-    # Add periodic keepalive message
+    # Add periodic keepalive message (every 10 minutes = 600 seconds)
     application.job_queue.run_repeating(
         send_keepalive_message,
         interval=600,
-        first=10
+        first=10  # Wait 10 seconds before first message
     )
     
     # Add callback query handler
     application.add_handler(CallbackQueryHandler(handle_callback_query))
     
-    # Handlers para el comando ser
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
-        handle_ser_input
-    ), group=-12)
-    
-    application.add_handler(MessageHandler(
-        (filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
-        handle_ser_input
-    ), group=-12)
-    
-    # Handlers para el comando add
-    application.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
-        handle_add_name
+        handle_add_name,
     ), group=-11)
     
     application.add_handler(MessageHandler(
         (filters.PHOTO | filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
-        handle_add_content
+        handle_add_content,
     ), group=-11)
     
-    # Handlers para carga masiva (load)
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
-        handle_content_name
-    ), group=-10)
-    
+        handle_content_name,
+    ), group=-10)  # Alta prioridad
+
     application.add_handler(MessageHandler(
         (filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
-        handle_load_content
-    ), group=-10)
+        handle_load_content,
+    ), group=-10)  # Alta prioridad
     
-    # Handler para upser
     application.add_handler(MessageHandler(
-        (filters.PHOTO | filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
-        handle_upser_input
+        (filters.PHOTO | filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND,
+        handle_upser_input,
+        # Este manejador debe ejecutarse después de otros manejadores más específicos
     ), group=-5)
     
-    # Handler para multi-temporadas
     application.add_handler(MessageHandler(
-        (filters.PHOTO | filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
-        handle_multi_seasons_input
-    ), group=-4)
+        (filters.PHOTO | filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND,
+        handle_multi_seasons_input,
+    ), group=-4)  # Prioridad media
     
-    # Handler para búsquedas de texto
+    # Add message handler for direct text searches
     application.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND,
+        filters.TEXT & ~filters.COMMAND, 
         handle_search
-    ), group=1)
+    ), group=1)  # Menor prioridad
     
-    # Tareas periódicas
+    # Schedule periodic tasks - Solución alternativa
+    # En lugar de run_daily, usamos run_repeating con un intervalo de 24h
     application.job_queue.run_repeating(
         check_plan_expiry,
-        interval=24*60*60,
-        first=60
+        interval=24*60*60,  # 24 horas en segundos
+        first=60            # Esperar 60 segundos antes de la primera ejecución
     )
     
     application.job_queue.run_repeating(
         check_channel_memberships,
-        interval=6*60*60,
-        first=600
+        interval=6*60*60,  # 6 horas en segundos
+        first=600  # Primera ejecución después de 10 minutos
     )
     
     application.job_queue.run_repeating(
         reset_daily_limits,
-        interval=24*60*60,
-        first=120
+        interval=24*60*60,  # 24 horas en segundos
+        first=120           # Esperar 120 segundos antes de la primera ejecución
     )
     
     # Mantener el servidor Flask activo
@@ -6780,6 +6553,6 @@ def main() -> None:
     
     # Start the Bot
     application.run_polling()
-
+    
 if __name__ == "__main__":
     main()
