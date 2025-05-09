@@ -6678,12 +6678,11 @@ def main() -> None:
     application.add_handler(CommandHandler("cancelmulti", cancel_multi_command))
     application.add_handler(CommandHandler("repairmulti", repair_multi_series))
     application.add_handler(CommandHandler("load", load_command))
-    application.add_handler(CommandHandler("cancelmulti", cancel_multi_command))
     application.add_handler(CommandHandler("upser", upser_command))
     application.add_handler(CommandHandler("diagnosemulti", diagnose_multi_series))
-    application.add_handler(CommandHandler("fixseasons", fix_seasons))  # Nuevo comando para corregir temporadas
-    application.add_handler(CommandHandler("migrateepisodes", migrate_episodes))  # Nuevo comando para migrar episodios
-    application.add_handler(CommandHandler("confirmmigrate", confirm_migrate))  # Comando para confirmar migración
+    application.add_handler(CommandHandler("fixseasons", fix_seasons))
+    application.add_handler(CommandHandler("migrateepisodes", migrate_episodes))
+    application.add_handler(CommandHandler("confirmmigrate", confirm_migrate))
     application.add_handler(CommandHandler("cancelupser", cancel_upser_command))
     application.add_handler(CommandHandler("add", add_command))
     application.add_handler(CommandHandler("canceladd", cancel_add_command))
@@ -6696,81 +6695,84 @@ def main() -> None:
     application.add_handler(CommandHandler("stats", stats))
     application.add_handler(CommandHandler("broadcast", broadcast))
     
-    # Add periodic keepalive message (every 10 minutes = 600 seconds)
+    # Add periodic keepalive message
     application.job_queue.run_repeating(
         send_keepalive_message,
         interval=600,
-        first=10  # Wait 10 seconds before first message
+        first=10
     )
     
     # Add callback query handler
     application.add_handler(CallbackQueryHandler(handle_callback_query))
-         
+    
+    # Handlers para el comando ser
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
         handle_ser_input
-    ), group=-12)  # High priority
+    ), group=-12)
     
     application.add_handler(MessageHandler(
-        (filters.VIDEO | filters.DOCUMENT.ALL) & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
+        (filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
         handle_ser_input
-    ), group=-12)  # High priority
+    ), group=-12)
     
+    # Handlers para el comando add
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
-        handle_add_name,
+        handle_add_name
     ), group=-11)
     
     application.add_handler(MessageHandler(
         (filters.PHOTO | filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
-        handle_add_content,
+        handle_add_content
     ), group=-11)
     
+    # Handlers para carga masiva (load)
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
-        handle_content_name,
-    ), group=-10)  # Alta prioridad
-
+        handle_content_name
+    ), group=-10)
+    
     application.add_handler(MessageHandler(
         (filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
-        handle_load_content,
-    ), group=-10)  # Alta prioridad
+        handle_load_content
+    ), group=-10)
     
+    # Handler para upser
     application.add_handler(MessageHandler(
-        (filters.PHOTO | filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND,
-        handle_upser_input,
-        # Este manejador debe ejecutarse después de otros manejadores más específicos
+        (filters.PHOTO | filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
+        handle_upser_input
     ), group=-5)
     
+    # Handler para multi-temporadas
     application.add_handler(MessageHandler(
-        (filters.PHOTO | filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND,
-        handle_multi_seasons_input,
-    ), group=-4)  # Prioridad media
+        (filters.PHOTO | filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
+        handle_multi_seasons_input
+    ), group=-4)
     
-    # Add message handler for direct text searches
+    # Handler para búsquedas de texto
     application.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND, 
+        filters.TEXT & ~filters.COMMAND,
         handle_search
-    ), group=1)  # Menor prioridad
+    ), group=1)
     
-    # Schedule periodic tasks - Solución alternativa
-    # En lugar de run_daily, usamos run_repeating con un intervalo de 24h
+    # Tareas periódicas
     application.job_queue.run_repeating(
         check_plan_expiry,
-        interval=24*60*60,  # 24 horas en segundos
-        first=60            # Esperar 60 segundos antes de la primera ejecución
+        interval=24*60*60,
+        first=60
     )
     
     application.job_queue.run_repeating(
         check_channel_memberships,
-        interval=6*60*60,  # 6 horas en segundos
-        first=600  # Primera ejecución después de 10 minutos
+        interval=6*60*60,
+        first=600
     )
     
     application.job_queue.run_repeating(
         reset_daily_limits,
-        interval=24*60*60,  # 24 horas en segundos
-        first=120           # Esperar 120 segundos antes de la primera ejecución
+        interval=24*60*60,
+        first=120
     )
     
     # Mantener el servidor Flask activo
@@ -6778,6 +6780,6 @@ def main() -> None:
     
     # Start the Bot
     application.run_polling()
-    
+
 if __name__ == "__main__":
     main()
