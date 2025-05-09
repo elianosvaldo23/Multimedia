@@ -675,10 +675,14 @@ async def season_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def handle_series_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manejar la recepción del nombre de la serie"""
     try:
+        # Verificar que el usuario es administrador
         if not update.effective_user or update.effective_user.id != ADMIN_ID:
             return
 
-        if context.user_data.get('ser_state') != SER_STATE_WAITING_NAME:
+        # Verificar el estado explícitamente
+        current_state = context.user_data.get('ser_state')
+        if current_state != SER_STATE_WAITING_NAME:
+            # Si no estamos esperando el nombre, ignorar el mensaje
             return
 
         series_name = update.message.text.strip()
@@ -687,55 +691,75 @@ async def handle_series_name(update: Update, context: ContextTypes.DEFAULT_TYPE)
             parse_mode=ParseMode.HTML
         )
 
-        imdb_info = await search_imdb_info(series_name)
-        
-        context.user_data['current_series']['name'] = imdb_info['title'] if imdb_info else series_name
-        context.user_data['current_series']['imdb_info'] = imdb_info
-        
-        if imdb_info:
-            # Mostrar información encontrada
-            preview_text = (
-                f"✅ <b>{imdb_info['title']}</b> ({imdb_info.get('year', 'N/A')})\n\n"
-                f"⭐ <b>Calificación:</b> {imdb_info.get('rating', 'N/A')}/10\n"
-                f"🎭 <b>Género:</b> {imdb_info.get('genres', 'No disponible')}\n\n"
-                f"<blockquote>Ahora usa /season número para indicar la temporada\n"
-                f"Ejemplo: /season 1</blockquote>"
-            )
+        try:
+            imdb_info = await search_imdb_info(series_name)
             
-            if imdb_info.get('poster_url'):
-                try:
-                    poster_response = requests.get(imdb_info['poster_url'])
-                    poster_response.raise_for_status()
-                    poster_bytes = BytesIO(poster_response.content)
-                    
-                    await context.bot.send_photo(
-                        chat_id=update.effective_chat.id,
-                        photo=poster_bytes,
-                        caption=preview_text,
-                        parse_mode=ParseMode.HTML
-                    )
-                    await status_message.delete()
-                except Exception as e:
-                    logger.error(f"Error descargando póster: {e}")
+            # Guardar la información
+            context.user_data['current_series'] = {
+                'name': imdb_info['title'] if imdb_info else series_name,
+                'imdb_info': imdb_info,
+                'seasons': {},
+                'current_season': None,
+                'cover_photo': None,
+                'description': None
+            }
+            
+            if imdb_info:
+                preview_text = (
+                    f"✅ <b>{imdb_info['title']}</b> ({imdb_info.get('year', 'N/A')})\n\n"
+                    f"⭐ <b>Calificación:</b> {imdb_info.get('rating', 'N/A')}/10\n"
+                    f"🎭 <b>Género:</b> {imdb_info.get('genres', 'No disponible')}\n\n"
+                    f"<blockquote>Ahora usa /season número para indicar la temporada\n"
+                    f"Ejemplo: /season 1</blockquote>"
+                )
+                
+                if imdb_info.get('poster_url'):
+                    try:
+                        poster_response = requests.get(imdb_info['poster_url'])
+                        poster_response.raise_for_status()
+                        poster_bytes = BytesIO(poster_response.content)
+                        
+                        await context.bot.send_photo(
+                            chat_id=update.effective_chat.id,
+                            photo=poster_bytes,
+                            caption=preview_text,
+                            parse_mode=ParseMode.HTML
+                        )
+                        await status_message.delete()
+                    except Exception as e:
+                        logger.error(f"Error descargando póster: {e}")
+                        await status_message.edit_text(preview_text, parse_mode=ParseMode.HTML)
+                else:
                     await status_message.edit_text(preview_text, parse_mode=ParseMode.HTML)
             else:
-                await status_message.edit_text(preview_text, parse_mode=ParseMode.HTML)
-        else:
+                await status_message.edit_text(
+                    f"<blockquote>⚠️ No se encontró información para {series_name}\n"
+                    f"Continuando con información básica.\n"
+                    f"Usa /season número para empezar con la primera temporada</blockquote>",
+                    parse_mode=ParseMode.HTML
+                )
+
+            # Cambiar el estado a esperar archivos
+            context.user_data['ser_state'] = SER_STATE_RECEIVING
+
+        except Exception as e:
+            logger.error(f"Error buscando información: {e}")
             await status_message.edit_text(
-                f"<blockquote>⚠️ No se encontró información para {series_name}\n"
-                f"Continuando con información básica.\n"
-                f"Usa /season número para empezar con la primera temporada</blockquote>",
+                f"<blockquote>❌ Error al buscar información: {str(e)[:100]}\n"
+                f"Por favor, intenta nuevamente con /ser</blockquote>",
                 parse_mode=ParseMode.HTML
             )
-
-        context.user_data['ser_state'] = SER_STATE_RECEIVING
+            # Reiniciar el estado
+            context.user_data['ser_state'] = SER_STATE_IDLE
 
     except Exception as e:
-        logger.error(f"Error: {e}")
+        logger.error(f"Error en handle_series_name: {e}")
         await update.message.reply_text(
-            "<blockquote>❌ Ocurrió un error. Por favor, intenta nuevamente.</blockquote>",
+            "<blockquote>❌ Ocurrió un error. Por favor, intenta nuevamente con /ser</blockquote>",
             parse_mode=ParseMode.HTML
         )
+        # Reiniciar el estado
+        context.user_data['ser_state'] = SER_STATE_IDLE
 
 async def cancel_ser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Cancelar el proceso de carga de series"""
@@ -6995,7 +7019,7 @@ def main() -> None:
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
         handle_series_name
-    ), group=-12)
+    ), group=-15)
 
     application.add_handler(MessageHandler(
         (filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
