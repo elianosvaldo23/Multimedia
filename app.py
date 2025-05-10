@@ -51,14 +51,14 @@ def keep_alive():
 
 # Constantes del bot
 TOKEN = "7853962859:AAFxRdG9lqc8PKC9J7rtFlkQIVnB3iYlGQk"
-ADMIN_IDS = [1742433244, 7588449861, 6866175814]  # Lista de IDs de administradores
+ADMIN_IDSS = [1742433244, 7588449861, 6866175814]  # Lista de IDs de administradores
 CHANNEL_ID = -1002584219284
 GROUP_ID = -1002585538833
 SEARCH_CHANNEL_ID = -1002302159104
 
 def is_admin(user_id: int) -> bool:
     """Verificar si un usuario es administrador"""
-    return user_id in ADMIN_IDS
+    return user_id in ADMIN_IDSS
 
 # Add this at the top with other constants
 PLANS_INFO = PLANS
@@ -1523,7 +1523,7 @@ async def handle_multi_seasons_input(update: Update, context: ContextTypes.DEFAU
     user = update.effective_user
     
     # Verificar que el usuario es administrador
-    if user.id not in ADMIN_IDS:
+    if user.id not in ADMIN_IDSS:
         return
     
     # Verificar si estamos en modo de carga de series multi-temporada
@@ -3357,7 +3357,7 @@ async def load_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     user = update.effective_user
     
     # Verificar que el usuario es administrador
-    if user.id not in ADMIN_IDS:
+    if user.id not in ADMIN_IDSS:
         return
     
     # Obtener el estado actual de carga
@@ -3435,7 +3435,7 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
     user = update.effective_user
     
     # Verificar que el usuario es administrador
-    if user.id not in ADMIN_IDS:
+    if user.id not in ADMIN_IDSS:
         return
     
     # Verificar si estamos en modo de carga masiva
@@ -3587,7 +3587,7 @@ async def handle_load_content(update: Update, context: ContextTypes.DEFAULT_TYPE
     user = update.effective_user
     
     # Verificar que el usuario es administrador
-    if user.id not in ADMIN_IDS:
+    if user.id not in ADMIN_IDSS:
         return
     
     # Verificar si estamos en modo de carga masiva esperando archivos
@@ -4793,7 +4793,7 @@ async def handle_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     
     # Verificar si estamos en modo de carga masiva para el administrador
     load_state = context.bot_data.get('load_state', LOAD_STATE_INACTIVE)
-    if update.effective_user.id == ADMIN_ID and load_state != LOAD_STATE_INACTIVE:
+    if update.effective_user.id == ADMIN_IDS and load_state != LOAD_STATE_INACTIVE:
         # Si el admin está en modo de carga masiva, no procesar como búsqueda
         return
         
@@ -5560,7 +5560,7 @@ async def handle_make_request(update: Update, context: ContextTypes.DEFAULT_TYPE
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await context.bot.send_message(
-            chat_id=ADMIN_ID,
+            chat_id=ADMIN_IDS,
             text=f"<blockquote>📩 <b>Nuevo Pedido</b>\n\n</blockquote>"
                  f"Usuario: {query.from_user.first_name} (@{query.from_user.username})\n"
                  f"ID: {user_id}\n"
@@ -5590,7 +5590,7 @@ async def handle_accept_request(update: Update, context: ContextTypes.DEFAULT_TY
     await query.answer()
     
     # Check if user is admin
-    if query.from_user.id != ADMIN_ID:
+    if query.from_user.id != ADMIN_IDS:
         return
     
     # Parse callback data
@@ -5626,7 +5626,7 @@ async def set_user_plan(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     
     # Check if user is admin
-    if user.id not in ADMIN_IDS:
+    if user.id not in ADMIN_IDSS:
         return
     
     # Check arguments
@@ -5714,7 +5714,7 @@ async def add_gift_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     
     # Check if user is admin
-    if user.id not in ADMIN_IDS:
+    if user.id not in ADMIN_IDSS:
         return
     
     # Check arguments
@@ -5815,7 +5815,7 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     
     # Check if user is admin
-    if user.id not in ADMIN_IDS:
+    if user.id not in ADMIN_IDSS:
         return
     
     # Check arguments
@@ -5876,7 +5876,7 @@ async def upload_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     
     # Check if user is admin
-    if user.id not in ADMIN_IDS:
+    if user.id not in ADMIN_IDSS:
         return
     
     # Check if message is a reply to a media message
@@ -6040,7 +6040,7 @@ async def request_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await context.bot.send_message(
-            chat_id=ADMIN_ID,
+            chat_id=ADMIN_IDS,
             text=f"<blockquote>📩 <b>Nuevo Pedido</b>\n\</blockquote>n"
                  f"Usuario: {update.effective_user.first_name} (@{update.effective_user.username})\n"
                  f"ID: {user_id}\n"
@@ -6069,7 +6069,7 @@ async def admin_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     
     # Check if user is admin
-    if user.id not in ADMIN_IDS:
+    if user.id not in ADMIN_IDSS:
         return
     
     help_text = (
@@ -6098,7 +6098,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     
     # Check if user is admin
-    if user.id not in ADMIN_IDS:
+    if user.id not in ADMIN_IDSS:
         return
     
     try:
@@ -6137,7 +6137,7 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     
     # Check if user is admin
-    if user.id not in ADMIN_IDS:
+    if user.id not in ADMIN_IDSS:
         return
     
     # Check arguments
@@ -6188,7 +6188,7 @@ async def upser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     user = update.effective_user
     
     # Verificar que el usuario es administrador
-    if user.id not in ADMIN_IDS:
+    if user.id not in ADMIN_IDSS:
         return
     
     # Obtener el estado actual
@@ -6363,7 +6363,7 @@ async def cancel_upser_command(update: Update, context: ContextTypes.DEFAULT_TYP
     user = update.effective_user
     
     # Verificar que el usuario es administrador
-    if user.id not in ADMIN_IDS:
+    if user.id not in ADMIN_IDSS:
         return
     
     # Reiniciar el estado
@@ -6388,7 +6388,7 @@ async def handle_upser_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
     user = update.effective_user
     
     # Verificar que el usuario es administrador
-    if user.id not in ADMIN_IDS:
+    if user.id not in ADMIN_IDSS:
         return
     
     # Verificar si estamos en modo de carga de series
@@ -7162,34 +7162,34 @@ def main() -> None:
     # Handlers organizados por prioridad (grupos)
     # Grupo -12: Handlers para el comando ser (mayor prioridad)
     application.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
+        filters.TEXT & ~filters.COMMAND & filters.User(user_id=ADMIN_IDS),
         handle_series_name
     ), group=-15)
 
     application.add_handler(MessageHandler(
-        (filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
+        (filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_id=ADMIN_IDS),
         handle_series_content
     ), group=-15)
 
     # Grupo -11: Handlers para el comando add
     application.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
+        filters.TEXT & ~filters.COMMAND & filters.User(user_id=ADMIN_IDS),
         handle_add_name
     ), group=-11)
     
     application.add_handler(MessageHandler(
-        (filters.PHOTO | filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
+        (filters.PHOTO | filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_id=ADMIN_IDS),
         handle_add_content
     ), group=-11)
     
     # Grupo -10: Handlers para carga masiva (load)
     application.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
+        filters.TEXT & ~filters.COMMAND & filters.User(user_id=ADMIN_IDS),
         handle_content_name
     ), group=-10)
 
     application.add_handler(MessageHandler(
-        (filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_id=ADMIN_ID),
+        (filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_id=ADMIN_IDS),
         handle_load_content
     ), group=-10)
     
