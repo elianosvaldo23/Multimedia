@@ -51,10 +51,14 @@ def keep_alive():
 
 # Constantes del bot
 TOKEN = "7853962859:AAFxRdG9lqc8PKC9J7rtFlkQIVnB3iYlGQk"
-ADMIN_ID = 1742433244
+ADMIN_IDS = [1742433244, 7588449861, 6866175814]  # Lista de IDs de administradores
 CHANNEL_ID = -1002584219284
 GROUP_ID = -1002585538833
 SEARCH_CHANNEL_ID = -1002302159104
+
+def is_admin(user_id: int) -> bool:
+    """Verificar si un usuario es administrador"""
+    return user_id in ADMIN_IDS
 
 # Add this at the top with other constants
 PLANS_INFO = PLANS
@@ -511,7 +515,7 @@ async def ser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
     """Comando para administradores para subir series con múltiples temporadas"""
     try:
         # Verificar que el usuario es administrador
-        if not update.effective_user or update.effective_user.id != ADMIN_ID:
+        if not is_admin(user.id):
             return
 
         # Obtener el estado actual
@@ -639,7 +643,7 @@ async def ser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 async def season_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Comando para indicar la temporada actual"""
     try:
-        if not update.effective_user or update.effective_user.id != ADMIN_ID:
+        if not is_admin(user.id):
             return
 
         if context.user_data.get('ser_state') != SER_STATE_RECEIVING:
@@ -712,7 +716,7 @@ async def handle_series_name(update: Update, context: ContextTypes.DEFAULT_TYPE)
     """Manejar la recepción del nombre de la serie"""
     try:
         # Verificar que el usuario es administrador
-        if not update.effective_user or update.effective_user.id != ADMIN_ID:
+        if not is_admin(user.id):
             return
 
         # Verificar explícitamente el estado
@@ -801,7 +805,7 @@ async def cancel_ser_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     """Cancelar el proceso de carga de series"""
     try:
         # Verificar que el usuario es administrador
-        if not update.effective_user or update.effective_user.id != ADMIN_ID:
+        if not is_admin(user.id):
             return
 
         # Verificar si hay un proceso activo
@@ -836,7 +840,7 @@ async def cancel_ser_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def handle_series_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manejar la recepción de capítulos durante el proceso de serie"""
     try:
-        if not update.effective_user or update.effective_user.id != ADMIN_ID:
+        if not is_admin(user.id):
             return
 
         if context.user_data.get('ser_state') != SER_STATE_RECEIVING:
@@ -1382,8 +1386,8 @@ async def imdb_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 async def a_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Comando para administradores para añadir series con múltiples temporadas"""
     # Verificar que el usuario es administrador
-    if not update.effective_user or update.effective_user.id != ADMIN_ID:
-        return
+    if not is_admin(user.id):
+            return
     
     # Obtener el estado actual
     multi_state = context.user_data.get('multi_state', MULTI_SEASONS_STATE_IDLE)
@@ -1497,8 +1501,8 @@ async def a_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def cancel_multi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Cancelar el proceso de carga de serie con múltiples temporadas"""
     # Verificar que el usuario es administrador
-    if not update.effective_user or update.effective_user.id != ADMIN_ID:
-        return
+    if not is_admin(user.id):
+            return
     
     # Reiniciar el estado
     context.user_data['multi_state'] = MULTI_SEASONS_STATE_IDLE
@@ -1519,7 +1523,7 @@ async def handle_multi_seasons_input(update: Update, context: ContextTypes.DEFAU
     user = update.effective_user
     
     # Verificar que el usuario es administrador
-    if user.id != ADMIN_ID:
+    if user.id not in ADMIN_IDS:
         return
     
     # Verificar si estamos en modo de carga de series multi-temporada
@@ -1956,8 +1960,8 @@ async def finalize_multi_seasons_upload(update: Update, context: ContextTypes.DE
 async def fix_seasons(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Comando para administradores para corregir manualmente temporadas de una serie"""
     # Verificar que el usuario es administrador
-    if not update.effective_user or update.effective_user.id != ADMIN_ID:
-        return
+    if not is_admin(user.id):
+            return
     
     # Verificar si se proporcionaron todos los argumentos necesarios
     if len(context.args) < 4:
@@ -2091,8 +2095,8 @@ async def fix_seasons(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 async def migrate_episodes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Comando para administradores para migrar episodios entre temporadas"""
     # Verificar que el usuario es administrador
-    if not update.effective_user or update.effective_user.id != ADMIN_ID:
-        return
+    if not is_admin(user.id):
+            return
     
     # Verificar si se proporcionaron todos los argumentos necesarios
     if len(context.args) < 2:
@@ -2173,8 +2177,8 @@ async def migrate_episodes(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 async def confirm_migrate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Confirmar migración de episodios entre temporadas"""
     # Verificar que el usuario es administrador
-    if not update.effective_user or update.effective_user.id != ADMIN_ID:
-        return
+    if not is_admin(user.id):
+            return
     
     # Verificar si se proporcionaron todos los argumentos necesarios
     if len(context.args) < 2:
@@ -2366,8 +2370,8 @@ async def handle_multi_series_request(update: Update, context: ContextTypes.DEFA
 async def diagnose_multi_series(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Comando para administradores para diagnosticar problemas con series multi-temporada"""
     # Verificar que el usuario es administrador
-    if not update.effective_user or update.effective_user.id != ADMIN_ID:
-        return
+    if not is_admin(user.id):
+            return
     
     # Verificar si se proporcionó un ID de serie
     if not context.args:
@@ -2493,8 +2497,8 @@ async def verify_multi_series_data(context, series_id):
 async def repair_multi_series(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Comando para administradores para reparar series con múltiples temporadas"""
     # Verificar que el usuario es administrador
-    if not update.effective_user or update.effective_user.id != ADMIN_ID:
-        return
+    if not is_admin(user.id):
+            return
     
     # Verificar si se proporcionó un ID de serie
     if not context.args:
@@ -2858,8 +2862,8 @@ async def send_all_multi_episodes(query, context, season_id):
 async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Comando para administradores para añadir contenido sin búsqueda en IMDb"""
     # Verificar que el usuario es administrador
-    if not update.effective_user or update.effective_user.id != ADMIN_ID:
-        return
+    if not is_admin(user.id):
+            return
     
     # Obtener el estado actual
     add_state = context.user_data.get('add_state', ADD_STATE_IDLE)
@@ -2922,8 +2926,8 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 async def cancel_add_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Cancelar el proceso de añadir contenido"""
     # Verificar que el usuario es administrador
-    if not update.effective_user or update.effective_user.id != ADMIN_ID:
-        return
+    if not is_admin(user.id):
+            return
     
     # Reiniciar el estado
     context.user_data['add_state'] = ADD_STATE_IDLE
@@ -2942,8 +2946,8 @@ async def cancel_add_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def handle_add_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manejar recepción del nombre del contenido en el proceso de /add"""
     # Verificar que el usuario es administrador
-    if not update.effective_user or update.effective_user.id != ADMIN_ID:
-        return
+    if not is_admin(user.id):
+            return
     
     # Verificar si estamos esperando el nombre del contenido
     add_state = context.user_data.get('add_state', ADD_STATE_IDLE)
@@ -3010,8 +3014,8 @@ async def handle_add_name(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def handle_add_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manejar la recepción de capítulos durante el proceso de /add"""
     # Verificar que el usuario es administrador
-    if not update.effective_user or update.effective_user.id != ADMIN_ID:
-        return
+    if not is_admin(user.id):
+            return
     
     # Verificar si estamos en modo de añadir contenido
     add_state = context.user_data.get('add_state', ADD_STATE_IDLE)
@@ -3353,7 +3357,7 @@ async def load_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     user = update.effective_user
     
     # Verificar que el usuario es administrador
-    if user.id != ADMIN_ID:
+    if user.id not in ADMIN_IDS:
         return
     
     # Obtener el estado actual de carga
@@ -3431,7 +3435,7 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
     user = update.effective_user
     
     # Verificar que el usuario es administrador
-    if user.id != ADMIN_ID:
+    if user.id not in ADMIN_IDS:
         return
     
     # Verificar si estamos en modo de carga masiva
@@ -3583,7 +3587,7 @@ async def handle_load_content(update: Update, context: ContextTypes.DEFAULT_TYPE
     user = update.effective_user
     
     # Verificar que el usuario es administrador
-    if user.id != ADMIN_ID:
+    if user.id not in ADMIN_IDS:
         return
     
     # Verificar si estamos en modo de carga masiva esperando archivos
@@ -5622,7 +5626,7 @@ async def set_user_plan(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     
     # Check if user is admin
-    if user.id != ADMIN_ID:
+    if user.id not in ADMIN_IDS:
         return
     
     # Check arguments
@@ -5710,7 +5714,7 @@ async def add_gift_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     
     # Check if user is admin
-    if user.id != ADMIN_ID:
+    if user.id not in ADMIN_IDS:
         return
     
     # Check arguments
@@ -5811,7 +5815,7 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     
     # Check if user is admin
-    if user.id != ADMIN_ID:
+    if user.id not in ADMIN_IDS:
         return
     
     # Check arguments
@@ -5872,7 +5876,7 @@ async def upload_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     
     # Check if user is admin
-    if user.id != ADMIN_ID:
+    if user.id not in ADMIN_IDS:
         return
     
     # Check if message is a reply to a media message
@@ -6065,7 +6069,7 @@ async def admin_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     
     # Check if user is admin
-    if user.id != ADMIN_ID:
+    if user.id not in ADMIN_IDS:
         return
     
     help_text = (
@@ -6094,7 +6098,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     
     # Check if user is admin
-    if user.id != ADMIN_ID:
+    if user.id not in ADMIN_IDS:
         return
     
     try:
@@ -6133,7 +6137,7 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     
     # Check if user is admin
-    if user.id != ADMIN_ID:
+    if user.id not in ADMIN_IDS:
         return
     
     # Check arguments
@@ -6184,7 +6188,7 @@ async def upser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     user = update.effective_user
     
     # Verificar que el usuario es administrador
-    if user.id != ADMIN_ID:
+    if user.id not in ADMIN_IDS:
         return
     
     # Obtener el estado actual
@@ -6359,7 +6363,7 @@ async def cancel_upser_command(update: Update, context: ContextTypes.DEFAULT_TYP
     user = update.effective_user
     
     # Verificar que el usuario es administrador
-    if user.id != ADMIN_ID:
+    if user.id not in ADMIN_IDS:
         return
     
     # Reiniciar el estado
@@ -6384,7 +6388,7 @@ async def handle_upser_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
     user = update.effective_user
     
     # Verificar que el usuario es administrador
-    if user.id != ADMIN_ID:
+    if user.id not in ADMIN_IDS:
         return
     
     # Verificar si estamos en modo de carga de series
