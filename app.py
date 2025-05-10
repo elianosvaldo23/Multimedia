@@ -842,10 +842,15 @@ async def handle_series_content(update: Update, context: ContextTypes.DEFAULT_TY
         if context.user_data.get('ser_state') != SER_STATE_RECEIVING:
             return
 
-        current_series = context.user_data.get('current_series', {})
-        if 'seasons' not in current_series:
-            current_series['seasons'] = {}
-            
+        # Inicializar la estructura de datos si no existe
+        if 'current_series' not in context.user_data:
+            context.user_data['current_series'] = {
+                'name': None,
+                'seasons': {},
+                'current_season': None
+            }
+
+        current_series = context.user_data['current_series']
         current_season = current_series.get('current_season')
 
         if not current_season:
@@ -861,8 +866,9 @@ async def handle_series_content(update: Update, context: ContextTypes.DEFAULT_TY
             original_caption = update.message.caption or ""
             file_name = update.message.document.file_name if update.message.document else None
 
-            # Asegurarse que existe la temporada en el diccionario
-            current_season = str(current_season)  # Convertir a string para consistencia
+            # Inicializar la lista de episodios para la temporada actual si no existe
+            if 'seasons' not in current_series:
+                current_series['seasons'] = {}
             if current_season not in current_series['seasons']:
                 current_series['seasons'][current_season] = []
 
@@ -872,39 +878,24 @@ async def handle_series_content(update: Update, context: ContextTypes.DEFAULT_TY
             new_caption = f"{current_series['name']} - Temporada {current_season} Capítulo {episode_num}"
 
             try:
+                # Reenviar con el nuevo caption
                 if update.message.video:
                     file_id = update.message.video.file_id
-                    # Borrar el mensaje original
-                    await context.bot.delete_message(
-                        chat_id=chat_id, 
-                        message_id=message_id
-                    )
-                    # Enviar un nuevo mensaje con el caption correcto
                     new_message = await context.bot.send_video(
                         chat_id=chat_id,
                         video=file_id,
                         caption=new_caption
                     )
-                    # Actualizar el message_id para guardarlo correctamente
-                    message_id = new_message.message_id
                 else:
                     file_id = update.message.document.file_id
-                    # Borrar el mensaje original
-                    await context.bot.delete_message(
-                        chat_id=chat_id, 
-                        message_id=message_id
-                    )
-                    # Enviar un nuevo mensaje con el caption correcto
                     new_message = await context.bot.send_document(
                         chat_id=chat_id,
                         document=file_id,
                         caption=new_caption
                     )
-                    # Actualizar el message_id para guardarlo correctamente
-                    message_id = new_message.message_id
 
                 episode_data = {
-                    'message_id': message_id,
+                    'message_id': new_message.message_id,
                     'episode_number': episode_num,
                     'chat_id': chat_id,
                     'caption': new_caption
@@ -913,13 +904,15 @@ async def handle_series_content(update: Update, context: ContextTypes.DEFAULT_TY
                 # Añadir el episodio a la temporada correcta
                 current_series['seasons'][current_season].append(episode_data)
                 
-                # IMPORTANTE: Actualizar el contexto después de cada cambio
+                # IMPORTANTE: Actualizar el contexto
                 context.user_data['current_series'] = current_series
 
-                # Mostrar estado actual de las temporadas
+                # Mostrar resumen actual
+                seasons_info = "\n".join([
+                    f"Temporada {season}: {len(episodes)} episodios"
+                    for season, episodes in current_series['seasons'].items()
+                ])
                 total_episodes = sum(len(episodes) for episodes in current_series['seasons'].values())
-                seasons_info = "\n".join(f"Temporada {s}: {len(e)} episodios" 
-                                       for s, e in current_series['seasons'].items())
 
                 await update.message.reply_text(
                     f"<blockquote>✅ Capítulo {episode_num} añadido a Temporada {current_season}\n\n"
@@ -1037,13 +1030,23 @@ async def finalize_multi_series_upload(update, context, status_message=None):
             "<blockquote>⏳ Subiendo portada al canal de búsqueda...</blockquote>",
             parse_mode=ParseMode.HTML
         )
-        sent_cover = await context.bot.send_photo(
-            chat_id=SEARCH_CHANNEL_ID,
-            photo=cover_photo,
-            caption=description,
-            parse_mode=ParseMode.HTML
-        )
-        search_channel_cover_id = sent_cover.message_id
+        
+        # Intentar subir la portada hasta 3 veces
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                sent_cover = await context.bot.send_photo(
+                    chat_id=SEARCH_CHANNEL_ID,
+                    photo=cover_photo,
+                    caption=description,
+                    parse_mode=ParseMode.HTML
+                )
+                search_channel_cover_id = sent_cover.message_id
+                break
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    raise e
+                await asyncio.sleep(2)
 
         # 5. Generar URL para el botón "Ver ahora"
         view_url = f"https://t.me/MultimediaTVbot?start=multiseries_{series_id}"
@@ -1060,16 +1063,19 @@ async def finalize_multi_series_upload(update, context, status_message=None):
         )
 
         # 8. Procesar todas las temporadas
-        seasons = sorted([(int(season_num), episodes) for season_num, episodes in current_series['seasons'].items()])
+        # Ordenar temporadas numéricamente
+        seasons_list = [(int(season_num), episodes) for season_num, episodes in current_series['seasons'].items()]
+        seasons = sorted(seasons_list, key=lambda x: x[0])  # Ordenar por número de temporada
         total_seasons = len(seasons)
-
-        # Mensaje inicial de progreso
+        
+        # Verificar temporadas antes de procesar
         await status_message.edit_text(
-            f"<blockquote>📊 Preparando subida de {total_seasons} temporadas..."
-            f"Total de episodios: {sum(len(eps) for _, eps in seasons)}</blockquote>",
+            f"<blockquote>📊 Verificando {total_seasons} temporadas...\n"
+            f"Total episodios: {sum(len(eps) for _, eps in seasons)}</blockquote>",
             parse_mode=ParseMode.HTML
         )
 
+        # Procesar cada temporada
         for season_idx, (season_num, episodes) in enumerate(seasons, 1):
             try:
                 await status_message.edit_text(
@@ -1106,12 +1112,20 @@ async def finalize_multi_series_upload(update, context, status_message=None):
 
                     for episode in group:
                         try:
-                            copied_msg = await context.bot.copy_message(
-                                chat_id=SEARCH_CHANNEL_ID,
-                                from_chat_id=episode['chat_id'],
-                                message_id=episode['message_id'],
-                                disable_notification=True
-                            )
+                            # Intentar copiar el episodio hasta 3 veces
+                            for copy_attempt in range(3):
+                                try:
+                                    copied_msg = await context.bot.copy_message(
+                                        chat_id=SEARCH_CHANNEL_ID,
+                                        from_chat_id=episode['chat_id'],
+                                        message_id=episode['message_id'],
+                                        disable_notification=True
+                                    )
+                                    break
+                                except Exception as copy_error:
+                                    if copy_attempt == 2:
+                                        raise copy_error
+                                    await asyncio.sleep(2)
 
                             db.add_season_episode(
                                 season_id=season_id,
@@ -1131,9 +1145,9 @@ async def finalize_multi_series_upload(update, context, status_message=None):
                             failed_episodes += 1
                             continue
 
-                        await asyncio.sleep(0.5)
+                        await asyncio.sleep(1)  # Aumentar pausa entre episodios
 
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(2)  # Pausa entre grupos
 
                 if season_episodes:
                     successful_seasons[season_num] = season_episodes
@@ -1146,7 +1160,7 @@ async def finalize_multi_series_upload(update, context, status_message=None):
                         parse_mode=ParseMode.HTML
                     )
 
-                await asyncio.sleep(2)
+                await asyncio.sleep(3)  # Pausa más larga entre temporadas
 
             except Exception as e:
                 logger.error(f"Error procesando temporada {season_num}: {e}")
@@ -1158,18 +1172,28 @@ async def finalize_multi_series_upload(update, context, status_message=None):
                 "<blockquote>⏳ Subiendo portada al canal principal...</blockquote>",
                 parse_mode=ParseMode.HTML
             )
-            sent_cover_main = await context.bot.send_photo(
-                chat_id=CHANNEL_ID,
-                photo=cover_photo,
-                caption=description,
-                parse_mode=ParseMode.HTML
-            )
             
-            await context.bot.edit_message_reply_markup(
-                chat_id=CHANNEL_ID,
-                message_id=sent_cover_main.message_id,
-                reply_markup=reply_markup
-            )
+            # Intentar subir la portada al canal principal hasta 3 veces
+            for attempt in range(max_retries):
+                try:
+                    sent_cover_main = await context.bot.send_photo(
+                        chat_id=CHANNEL_ID,
+                        photo=cover_photo,
+                        caption=description,
+                        parse_mode=ParseMode.HTML
+                    )
+                    
+                    await context.bot.edit_message_reply_markup(
+                        chat_id=CHANNEL_ID,
+                        message_id=sent_cover_main.message_id,
+                        reply_markup=reply_markup
+                    )
+                    break
+                except Exception as e:
+                    if attempt == max_retries - 1:
+                        raise e
+                    await asyncio.sleep(2)
+                    
         except Exception as e:
             logger.error(f"Error al subir portada al canal principal: {e}")
 
