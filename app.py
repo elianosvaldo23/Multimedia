@@ -892,11 +892,10 @@ async def finalize_multi_series_upload(update, context, status_message=None):
         )
         return
     
-    if not status_message:
-        status_message = await update.message.reply_text(
-            "<blockquote>⏳ Procesando y subiendo la serie...</blockquote>",
-            parse_mode=ParseMode.HTML
-        )
+    status_message = await update.message.reply_text(
+        "<blockquote>⏳ Procesando y subiendo la serie...</blockquote>",
+        parse_mode=ParseMode.HTML
+    )
     
     try:
         # 1. Crear ID único para la serie
@@ -912,91 +911,74 @@ async def finalize_multi_series_upload(update, context, status_message=None):
                 f"🎬 <b>Director:</b> {imdb_info.get('directors', 'No disponible')}\n"
                 f"👥 <b>Reparto:</b> {imdb_info.get('cast', 'No disponible')}\n\n"
                 f"📝 <b>Sinopsis:</b>\n<blockquote expandable>{imdb_info.get('plot', 'No disponible')}</blockquote>\n\n"
+                f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
             )
         else:
             description = (
                 f"<b>{current_series['name']}</b>\n\n"
                 f"<blockquote>Serie completa con múltiples temporadas</blockquote>\n\n"
+                f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
             )
-
-        # Asegurar que la marca de agua esté presente
-        if "Multimedia-TV 📺" not in description:
-            description += f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
         
-        # 3. Manejar la portada
+        # 3. Subir portada al canal de búsqueda
         cover_photo = current_series.get('cover_photo')
-        if not cover_photo and imdb_info and imdb_info.get('poster_url'):
-            try:
-                # Intentar descargar el póster
-                poster_response = requests.get(imdb_info['poster_url'])
-                poster_response.raise_for_status()
-                poster_bytes = BytesIO(poster_response.content)
-                
-                # Enviar temporalmente para obtener el file_id
-                temp_msg = await context.bot.send_photo(
-                    chat_id=update.effective_chat.id,
-                    photo=poster_bytes,
-                    caption="Descargando portada..."
-                )
-                
-                cover_photo = temp_msg.photo[-1].file_id
-                await temp_msg.delete()
-                
-            except Exception as e:
-                logger.error(f"Error descargando póster: {e}")
-        
-        # Si no tenemos portada, detener el proceso
         if not cover_photo:
             await status_message.edit_text(
-                "<blockquote>❌ No se encontró imagen de portada para la serie.\n"
-                "Por favor, añade una imagen de portada antes de finalizar.</blockquote>",
+                "<blockquote>❌ No se encontró imagen de portada para la serie.</blockquote>",
                 parse_mode=ParseMode.HTML
             )
-            context.user_data['ser_state'] = SER_STATE_COVER
             return
         
-        # 4. Subir portada al canal de búsqueda
-        sent_cover = await context.bot.send_photo(
-            chat_id=SEARCH_CHANNEL_ID,
-            photo=cover_photo,
-            caption=description,
-            parse_mode=ParseMode.HTML
-        )
+        try:
+            sent_cover = await context.bot.send_photo(
+                chat_id=SEARCH_CHANNEL_ID,
+                photo=cover_photo,
+                caption=description,
+                parse_mode=ParseMode.HTML
+            )
+            
+            search_channel_cover_id = sent_cover.message_id
+        except Exception as e:
+            logger.error(f"Error enviando portada al canal de búsqueda: {e}")
+            await status_message.edit_text(
+                "<blockquote>❌ Error al enviar la portada al canal de búsqueda.</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+            return
         
-        search_channel_cover_id = sent_cover.message_id
-        
-        # 5. Generar URL para el botón "Ver ahora"
+        # 4. Generar URL para el botón "Ver ahora"
         view_url = f"https://t.me/MultimediaTVbot?start=multiseries_{series_id}"
         
-        # 6. Crear botón para la portada
+        # 5. Crear botón para la portada
         keyboard = [[InlineKeyboardButton("Ver ahora", url=view_url)]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        # 7. Actualizar portada con el botón
+        # 6. Actualizar portada con el botón
         await context.bot.edit_message_reply_markup(
             chat_id=SEARCH_CHANNEL_ID,
             message_id=search_channel_cover_id,
             reply_markup=reply_markup
         )
         
-        # 8. Subir cada temporada
+        # 7. Subir cada temporada
         total_episodes = 0
         failed_episodes = 0
-        successful_seasons = {}
+        uploaded_seasons = 0
+        all_episodes = []
+
+        # Convertir las temporadas a lista y ordenarlas numéricamente
+        seasons_list = sorted([(int(num), eps) for num, eps in current_series['seasons'].items()])
         
-        # Procesar las temporadas en orden numérico
-        sorted_seasons = sorted(current_series['seasons'].items(), key=lambda x: int(x[0]))
-        
-        for season_num, episodes in sorted_seasons:
-            await status_message.edit_text(
-                f"<blockquote>⏳ Subiendo Temporada {season_num}...</blockquote>",
-                parse_mode=ParseMode.HTML
-            )
-            
-            # Crear ID único para la temporada manteniendo relación con series_id
-            season_id = int(f"{series_id}{int(season_num):03d}")
-            
+        for season_num, episodes in seasons_list:
             try:
+                await status_message.edit_text(
+                    f"<blockquote>⏳ Subiendo Temporada {season_num}...</blockquote>",
+                    parse_mode=ParseMode.HTML
+                )
+                
+                # Crear ID único para la temporada
+                season_id = int(f"{series_id}{season_num:03d}")
+                
                 # Guardar la temporada en la base de datos
                 db.add_season(
                     season_id=season_id,
@@ -1004,10 +986,9 @@ async def finalize_multi_series_upload(update, context, status_message=None):
                     season_name=f"{current_series['name']} - Temporada {season_num}"
                 )
                 
-                successful_seasons[season_num] = []
-                
-                # Procesar episodios en grupos pequeños
+                # Procesar episodios en grupos más pequeños
                 episode_groups = [episodes[i:i+5] for i in range(0, len(episodes), 5)]
+                season_episodes = []
                 
                 for group_idx, group in enumerate(episode_groups):
                     await status_message.edit_text(
@@ -1018,7 +999,6 @@ async def finalize_multi_series_upload(update, context, status_message=None):
                     
                     for episode in group:
                         try:
-                            # Copiar episodio al canal de búsqueda
                             copied_msg = await context.bot.copy_message(
                                 chat_id=SEARCH_CHANNEL_ID,
                                 from_chat_id=episode['chat_id'],
@@ -1033,7 +1013,7 @@ async def finalize_multi_series_upload(update, context, status_message=None):
                                 message_id=copied_msg.message_id
                             )
                             
-                            successful_seasons[season_num].append({
+                            season_episodes.append({
                                 'episode_number': episode['episode_number'],
                                 'message_id': copied_msg.message_id
                             })
@@ -1045,20 +1025,26 @@ async def finalize_multi_series_upload(update, context, status_message=None):
                             failed_episodes += 1
                             continue
                         
-                        # Pequeña pausa entre episodios
-                        await asyncio.sleep(0.5)
+                        await asyncio.sleep(0.5)  # Pequeña pausa entre episodios
                     
-                    # Pausa entre grupos
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(1)  # Pausa entre grupos
+                
+                if season_episodes:  # Si se subieron episodios exitosamente
+                    all_episodes.extend(season_episodes)
+                    uploaded_seasons += 1
                 
             except Exception as e:
                 logger.error(f"Error procesando temporada {season_num}: {e}")
                 continue
             
-            # Pausa entre temporadas
-            await asyncio.sleep(2)
+            await asyncio.sleep(2)  # Pausa entre temporadas
         
-        # 9. Subir portada al canal principal
+        # 8. Subir portada al canal principal
+        await status_message.edit_text(
+            "<blockquote>⏳ Subiendo portada al canal principal...</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        
         try:
             sent_cover_main = await context.bot.send_photo(
                 chat_id=CHANNEL_ID,
@@ -1067,7 +1053,7 @@ async def finalize_multi_series_upload(update, context, status_message=None):
                 parse_mode=ParseMode.HTML
             )
             
-            # Actualizar portada en canal principal con el botón
+            # 9. Actualizar portada en canal principal con el botón
             await context.bot.edit_message_reply_markup(
                 chat_id=CHANNEL_ID,
                 message_id=sent_cover_main.message_id,
@@ -1093,7 +1079,7 @@ async def finalize_multi_series_upload(update, context, status_message=None):
         success_message = (
             f"<blockquote>✅ Serie <b>{current_series['name']}</b> subida correctamente\n\n"
             f"📊 Detalles:\n"
-            f"- Temporadas: {len(successful_seasons)}\n"
+            f"- Temporadas subidas: {uploaded_seasons} de {len(current_series['seasons'])}\n"
             f"- Episodios subidos: {total_episodes}\n"
         )
         
