@@ -520,7 +520,7 @@ async def ser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
         # Si estamos inactivos, iniciar el proceso
         if ser_state == SER_STATE_IDLE:
             try:
-                # Inicializar estructura de datos para la serie
+                # Inicializar estructura de datos
                 context.user_data['ser_state'] = SER_STATE_WAITING_NAME
                 context.user_data['current_series'] = {
                     'name': None,
@@ -530,7 +530,7 @@ async def ser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                     'cover_photo': None,
                     'description': None,
                     'total_episodes': 0,  # Contador total de episodios
-                    'start_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')  # Añadir timestamp
+                    'start_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                 }
 
                 help_text = (
@@ -547,10 +547,7 @@ async def ser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                     "⚠️ Los capítulos se renombrarán automáticamente"
                 )
 
-                await update.message.reply_text(
-                    help_text,
-                    parse_mode=ParseMode.HTML
-                )
+                await update.message.reply_text(help_text, parse_mode=ParseMode.HTML)
 
                 # Crear mensaje de estado
                 status_msg = await update.message.reply_text(
@@ -566,12 +563,9 @@ async def ser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                     "<blockquote>❌ Error al iniciar el modo de carga. Por favor, intenta nuevamente.</blockquote>",
                     parse_mode=ParseMode.HTML
                 )
-                # Limpiar estado en caso de error
                 context.user_data['ser_state'] = SER_STATE_IDLE
                 context.user_data.pop('current_series', None)
-                context.user_data.pop('status_message', None)
 
-        # Si ya estamos en proceso y recibimos /ser de nuevo, finalizar
         else:
             try:
                 # Verificar si hay datos para procesar
@@ -612,7 +606,7 @@ async def ser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 current_series['upload_start_time'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
                 # Finalizar el proceso y subir la serie
-                await finalize_multi_series_upload(update, context, status_message)
+                await finalize_multi_series_upload(update, context)
 
             except Exception as e:
                 logger.error(f"Error finalizando serie: {e}")
@@ -620,7 +614,6 @@ async def ser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                     "<blockquote>❌ Error al finalizar la serie. Por favor, verifica los datos e intenta nuevamente.</blockquote>",
                     parse_mode=ParseMode.HTML
                 )
-                # No reiniciamos el estado aquí para permitir reintentar
 
     except Exception as e:
         logger.error(f"Error general en ser_command: {e}")
@@ -628,10 +621,8 @@ async def ser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
             "<blockquote>❌ Ocurrió un error inesperado. Por favor, intenta nuevamente.</blockquote>",
             parse_mode=ParseMode.HTML
         )
-        # Asegurar que el estado se reinicie en caso de error crítico
         context.user_data['ser_state'] = SER_STATE_IDLE
         context.user_data.pop('current_series', None)
-        context.user_data.pop('status_message', None)        
 
 async def season_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Comando para indicar la temporada actual"""
@@ -889,8 +880,9 @@ async def handle_series_content(update: Update, context: ContextTypes.DEFAULT_TY
             parse_mode=ParseMode.HTML
         )
             
-async def finalize_multi_series_upload(update, context, status_message=None):
+async def finalize_multi_series_upload(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Finalizar el proceso y subir la serie con múltiples temporadas"""
+    # Obtener datos de la serie
     current_series = context.user_data.get('current_series', {})
     
     if not current_series or not current_series.get('seasons'):
@@ -901,11 +893,10 @@ async def finalize_multi_series_upload(update, context, status_message=None):
         )
         return
     
-    if not status_message:
-        status_message = await update.message.reply_text(
-            "<blockquote>⏳ Procesando y subiendo la serie...</blockquote>",
-            parse_mode=ParseMode.HTML
-        )
+    status_message = await update.message.reply_text(
+        "<blockquote>⏳ Procesando y subiendo la serie...</blockquote>",
+        parse_mode=ParseMode.HTML
+    )
     
     try:
         # 1. Crear ID único para la serie
@@ -929,14 +920,40 @@ async def finalize_multi_series_upload(update, context, status_message=None):
                 f"<blockquote>Serie completa con múltiples temporadas</blockquote>\n\n"
                 f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
             )
+
+        # Asegurar que la marca de agua esté presente
+        if "Multimedia-TV 📺" not in description:
+            description += f"\n\n🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
         
         # 3. Subir portada al canal de búsqueda
         cover_photo = current_series.get('cover_photo')
+        if not cover_photo and imdb_info and imdb_info.get('poster_url'):
+            try:
+                # Intentar descargar el póster
+                poster_response = requests.get(imdb_info['poster_url'])
+                poster_response.raise_for_status()
+                poster_bytes = BytesIO(poster_response.content)
+                
+                # Enviar temporalmente para obtener el file_id
+                temp_msg = await context.bot.send_photo(
+                    chat_id=update.effective_chat.id,
+                    photo=poster_bytes,
+                    caption="Descargando portada..."
+                )
+                
+                cover_photo = temp_msg.photo[-1].file_id
+                await temp_msg.delete()
+                
+            except Exception as e:
+                logger.error(f"Error descargando póster: {e}")
+        
         if not cover_photo:
             await status_message.edit_text(
-                "<blockquote>❌ No se encontró imagen de portada para la serie.</blockquote>",
+                "<blockquote>❌ No se encontró imagen de portada para la serie.\n"
+                "Por favor, envía una imagen para usar como portada.</blockquote>",
                 parse_mode=ParseMode.HTML
             )
+            context.user_data['ser_state'] = SER_STATE_COVER
             return
         
         try:
@@ -1048,7 +1065,7 @@ async def finalize_multi_series_upload(update, context, status_message=None):
                 parse_mode=ParseMode.HTML
             )
             
-            # 9. Actualizar portada en canal principal con el botón
+            # 9. Actualizar la portada en canal principal con el botón
             await context.bot.edit_message_reply_markup(
                 chat_id=CHANNEL_ID,
                 message_id=sent_cover_main.message_id,
@@ -1097,7 +1114,7 @@ async def finalize_multi_series_upload(update, context, status_message=None):
         await status_message.edit_text(
             f"<blockquote>❌ Error al finalizar la serie: {str(e)[:100]}</blockquote>",
             parse_mode=ParseMode.HTML
-        )        
+        )
 
 async def send_episode(query, context, series_id, episode_number):
     """Enviar un capítulo específico al usuario"""
