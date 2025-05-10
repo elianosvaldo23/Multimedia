@@ -1000,6 +1000,9 @@ async def finalize_multi_series_upload(update, context, status_message=None):
 
         # Ordenar temporadas numéricamente
         seasons = sorted(current_series['seasons'].items(), key=lambda x: int(x[0]))
+        
+        # Array para mantener seguimiento de las temporadas procesadas exitosamente
+        successfully_processed_seasons = []
 
         for season_num, episodes in seasons:
             try:
@@ -1070,13 +1073,17 @@ async def finalize_multi_series_upload(update, context, status_message=None):
 
                 if season_episodes:
                     successful_seasons[season_num] = season_episodes
-                    processed_seasons += 1
+                    # Añadir a la lista de temporadas procesadas con éxito
+                    successfully_processed_seasons.append(season_num)
 
-                    await status_message.edit_text(
-                        f"<blockquote>✅ Temporada {season_num} completada: {len(season_episodes)} episodios\n"
-                        f"Progreso: {processed_seasons}/{total_seasons}</blockquote>",
-                        parse_mode=ParseMode.HTML
-                    )
+                # Incrementar el contador de temporadas procesadas independientemente del resultado
+                processed_seasons += 1
+
+                await status_message.edit_text(
+                    f"<blockquote>✅ Temporada {season_num} completada: {len(season_episodes)} episodios\n"
+                    f"Progreso: {processed_seasons}/{total_seasons}</blockquote>",
+                    parse_mode=ParseMode.HTML
+                )
 
                 await asyncio.sleep(2)
 
@@ -1114,11 +1121,11 @@ async def finalize_multi_series_upload(update, context, status_message=None):
         context.user_data['ser_state'] = SER_STATE_IDLE
         context.user_data.pop('current_series', None)
         
-        # 12. Informar resultado
+        # 12. Informar resultado - PARTE CORREGIDA
         success_message = (
             f"<blockquote>✅ Serie <b>{current_series['name']}</b> subida correctamente\n\n"
             f"📊 Detalles:\n"
-            f"- Temporadas: {processed_seasons} de {total_seasons}\n"
+            f"- Temporadas: {len(successfully_processed_seasons)} de {total_seasons}\n"
             f"- Episodios subidos: {total_episodes}\n"
         )
         
@@ -1139,6 +1146,7 @@ async def finalize_multi_series_upload(update, context, status_message=None):
             f"<blockquote>❌ Error al finalizar la serie: {str(e)[:100]}</blockquote>",
             parse_mode=ParseMode.HTML
         )
+
 
 async def send_episode(query, context, series_id, episode_number):
     """Enviar un capítulo específico al usuario"""
