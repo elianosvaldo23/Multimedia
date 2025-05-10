@@ -668,14 +668,30 @@ async def season_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 )
                 return
 
-            if str(season_number) not in current_series['seasons']:
-                current_series['seasons'][str(season_number)] = []
+            # Asegurar que existe la estructura de temporadas
+            if 'seasons' not in current_series:
+                current_series['seasons'] = {}
 
-            current_series['current_season'] = str(season_number)
+            # Convertir season_number a string para consistencia
+            season_number = str(season_number)
+            
+            # Si la temporada no existe, inicializarla
+            if season_number not in current_series['seasons']:
+                current_series['seasons'][season_number] = []
+
+            current_series['current_season'] = season_number
+            
+            # IMPORTANTE: Actualizar el contexto
+            context.user_data['current_series'] = current_series
+            
+            # Mostrar estado actual de todas las temporadas
+            seasons_info = "\n".join(f"Temporada {s}: {len(e)} episodios" 
+                                   for s, e in current_series['seasons'].items())
             
             await update.message.reply_text(
-                f"<blockquote>✅ Ahora trabajando en la Temporada {season_number}\n"
-                f"Envía todos los capítulos de esta temporada.</blockquote>",
+                f"<blockquote>✅ Ahora trabajando en la Temporada {season_number}\n\n"
+                f"Estado actual de la serie:\n{seasons_info}\n\n"
+                f"Envía los capítulos de esta temporada.</blockquote>",
                 parse_mode=ParseMode.HTML
             )
 
@@ -827,6 +843,9 @@ async def handle_series_content(update: Update, context: ContextTypes.DEFAULT_TY
             return
 
         current_series = context.user_data.get('current_series', {})
+        if 'seasons' not in current_series:
+            current_series['seasons'] = {}
+            
         current_season = current_series.get('current_season')
 
         if not current_season:
@@ -842,18 +861,11 @@ async def handle_series_content(update: Update, context: ContextTypes.DEFAULT_TY
             original_caption = update.message.caption or ""
             file_name = update.message.document.file_name if update.message.document else None
 
-            # Crear diccionario de temporada si no existe
-            if 'seasons' not in current_series:
-                current_series['seasons'] = {}
-
-            # Convertir current_season a string para consistencia
-            current_season = str(current_season)
-
-            # Inicializar lista de episodios para la temporada actual si no existe
+            # Asegurarse que existe la temporada en el diccionario
+            current_season = str(current_season)  # Convertir a string para consistencia
             if current_season not in current_series['seasons']:
                 current_series['seasons'][current_season] = []
 
-            # Calcular número de episodio
             episode_num = len(current_series['seasons'][current_season]) + 1
 
             # Crear nuevo caption
@@ -875,7 +887,7 @@ async def handle_series_content(update: Update, context: ContextTypes.DEFAULT_TY
                     )
                     # Actualizar el message_id para guardarlo correctamente
                     message_id = new_message.message_id
-                elif update.message.document:
+                else:
                     file_id = update.message.document.file_id
                     # Borrar el mensaje original
                     await context.bot.delete_message(
@@ -900,16 +912,19 @@ async def handle_series_content(update: Update, context: ContextTypes.DEFAULT_TY
 
                 # Añadir el episodio a la temporada correcta
                 current_series['seasons'][current_season].append(episode_data)
-
-                # Actualizar el contexto
+                
+                # IMPORTANTE: Actualizar el contexto después de cada cambio
                 context.user_data['current_series'] = current_series
 
-                # Mostrar resumen actualizado
+                # Mostrar estado actual de las temporadas
                 total_episodes = sum(len(episodes) for episodes in current_series['seasons'].values())
+                seasons_info = "\n".join(f"Temporada {s}: {len(e)} episodios" 
+                                       for s, e in current_series['seasons'].items())
+
                 await update.message.reply_text(
-                    f"<blockquote>✅ Capítulo {episode_num} añadido a Temporada {current_season}\n"
-                    f"Total en esta temporada: {len(current_series['seasons'][current_season])}\n"
-                    f"Total general: {total_episodes} capítulos</blockquote>",
+                    f"<blockquote>✅ Capítulo {episode_num} añadido a Temporada {current_season}\n\n"
+                    f"Estado actual:\n{seasons_info}\n"
+                    f"Total de episodios: {total_episodes}</blockquote>",
                     parse_mode=ParseMode.HTML
                 )
 
@@ -921,7 +936,7 @@ async def handle_series_content(update: Update, context: ContextTypes.DEFAULT_TY
                 )
 
     except Exception as e:
-        logger.error(f"Error en handle_series_content: {e}")
+        logger.error(f"Error: {e}")
         await update.message.reply_text(
             "<blockquote>❌ Ocurrió un error. Por favor, intenta nuevamente.</blockquote>",
             parse_mode=ParseMode.HTML
