@@ -894,6 +894,7 @@ async def handle_series_content(update: Update, context: ContextTypes.DEFAULT_TY
             
 async def finalize_multi_series_upload(update, context, status_message=None):
     """Finalizar el proceso y subir la serie con múltiples temporadas"""
+    # Obtener datos de la serie
     current_series = context.user_data.get('current_series', {})
     
     if not current_series or not current_series.get('seasons'):
@@ -911,8 +912,9 @@ async def finalize_multi_series_upload(update, context, status_message=None):
         )
     
     try:
-        # 1. Crear ID único para la serie
-        series_id = int(time.time())
+        # 1. Crear ID único para la serie o usar el existente
+        series_id = current_series.get('series_id', int(time.time()))
+        current_series['series_id'] = series_id
         
         # 2. Preparar la descripción
         imdb_info = current_series.get('imdb_info', {})
@@ -933,13 +935,9 @@ async def finalize_multi_series_upload(update, context, status_message=None):
                 f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
             )
 
-        # 3. Manejar la portada automáticamente si está disponible en IMDb
-        cover_photo = None
-        if imdb_info and imdb_info.get('poster_url'):
-            await status_message.edit_text(
-                "<blockquote>⏳ Descargando portada desde IMDb...</blockquote>",
-                parse_mode=ParseMode.HTML
-            )
+        # 3. Manejar la portada
+        cover_photo = current_series.get('cover_photo')
+        if not cover_photo and imdb_info and imdb_info.get('poster_url'):
             try:
                 response = requests.get(imdb_info['poster_url'])
                 response.raise_for_status()
@@ -954,13 +952,8 @@ async def finalize_multi_series_upload(update, context, status_message=None):
                 cover_photo = temp_msg.photo[-1].file_id
                 await temp_msg.delete()
             except Exception as e:
-                logger.error(f"Error descargando portada de IMDb: {e}")
+                logger.error(f"Error descargando póster: {e}")
 
-        # Si no se pudo obtener de IMDb, intentar obtener del contexto
-        if not cover_photo:
-            cover_photo = current_series.get('cover_photo')
-
-        # Verificar si tenemos una portada
         if not cover_photo:
             await status_message.edit_text(
                 "<blockquote>❌ No se encontró imagen de portada para la serie.\n"
@@ -1001,46 +994,55 @@ async def finalize_multi_series_upload(update, context, status_message=None):
             reply_markup=reply_markup
         )
         
+        # 8. Procesar todas las temporadas
         total_episodes = 0
         failed_episodes = 0
+        successful_seasons = {}
         processed_seasons = 0
 
         # Ordenar temporadas numéricamente
-        seasons_list = sorted([(int(season_num), episodes) for season_num, episodes in current_series['seasons'].items()])
+        seasons_list = sorted([(int(num), eps) for num, eps in current_series['seasons'].items()])
+        total_seasons = len(seasons_list)
 
         # Variables para seguimiento
         all_season_ids = []
         all_episode_ids = []
-
-        for season_num, episodes in seasons_list:
+        
+        for season_idx, (season_num, episodes) in enumerate(seasons_list, 1):
             try:
                 await status_message.edit_text(
-                    f"<blockquote>⏳ Procesando Temporada {season_num}...</blockquote>",
+                    f"<blockquote>⏳ Procesando Temporada {season_num} ({len(episodes)} episodios)\n"
+                    f"Progreso: {season_idx}/{total_seasons} temporadas</blockquote>",
                     parse_mode=ParseMode.HTML
                 )
-
+                
                 # Crear ID único para la temporada
                 season_id = int(f"{series_id}{season_num:03d}")
                 all_season_ids.append(season_id)
-
-                # Guardar temporada en la base de datos
-                db.add_season(
-                    season_id=season_id,
-                    series_id=series_id,
-                    season_name=f"{current_series['name']} - Temporada {season_num}"
-                )
+                
+                # Registrar temporada en la base de datos
+                try:
+                    db.add_season(
+                        season_id=season_id,
+                        series_id=series_id,
+                        season_name=f"{current_series['name']} - Temporada {season_num}"
+                    )
+                except Exception as db_error:
+                    logger.error(f"Error registrando temporada {season_num} en DB: {db_error}")
+                    continue
 
                 # Procesar episodios en grupos
                 episode_groups = [episodes[i:i+5] for i in range(0, len(episodes), 5)]
                 season_episodes = []
-
+                
                 for group_idx, group in enumerate(episode_groups):
                     await status_message.edit_text(
                         f"<blockquote>⏳ Subiendo episodios de Temporada {season_num} "
-                        f"({group_idx * 5 + 1}-{min((group_idx + 1) * 5, len(episodes))}/{len(episodes)})</blockquote>",
+                        f"({group_idx * 5 + 1}-{min((group_idx + 1) * 5, len(episodes))}/{len(episodes)})\n"
+                        f"Progreso total: Temporada {season_idx}/{total_seasons}</blockquote>",
                         parse_mode=ParseMode.HTML
                     )
-
+                    
                     for episode in group:
                         try:
                             # Copiar episodio al canal
@@ -1050,47 +1052,47 @@ async def finalize_multi_series_upload(update, context, status_message=None):
                                 message_id=episode['message_id'],
                                 disable_notification=True
                             )
-
+                            
                             # Registrar episodio
                             db.add_season_episode(
                                 season_id=season_id,
                                 episode_number=episode['episode_number'],
                                 message_id=copied_msg.message_id
                             )
-
+                            
                             season_episodes.append({
                                 'episode_number': episode['episode_number'],
                                 'message_id': copied_msg.message_id
                             })
-
+                            
                             all_episode_ids.append(copied_msg.message_id)
                             total_episodes += 1
-
+                            
                         except Exception as e:
                             logger.error(f"Error subiendo episodio: {e}")
                             failed_episodes += 1
                             continue
-
+                        
                         await asyncio.sleep(0.5)
-
+                    
                     await asyncio.sleep(1)
-
+                
                 if season_episodes:
+                    successful_seasons[season_num] = season_episodes
                     processed_seasons += 1
-
+                    
+                    # Confirmar finalización de la temporada
+                    await status_message.edit_text(
+                        f"<blockquote>✅ Temporada {season_num} completada: {len(season_episodes)} episodios\n"
+                        f"Progreso: {processed_seasons}/{total_seasons} temporadas</blockquote>",
+                        parse_mode=ParseMode.HTML
+                    )
+                
                 await asyncio.sleep(2)
-
+                
             except Exception as e:
                 logger.error(f"Error procesando temporada {season_num}: {e}")
                 continue
-
-        # Verificar que se procesaron todas las temporadas
-        if processed_seasons != len(current_series['seasons']):
-            await status_message.edit_text(
-                f"<blockquote>⚠️ Advertencia: Solo se procesaron {processed_seasons} de {len(current_series['seasons'])} temporadas.</blockquote>",
-                parse_mode=ParseMode.HTML
-            )
-            await asyncio.sleep(2)
         
         # 9. Subir portada al canal principal
         try:
@@ -1101,6 +1103,7 @@ async def finalize_multi_series_upload(update, context, status_message=None):
                 parse_mode=ParseMode.HTML
             )
             
+            # Actualizar portada en canal principal con el botón
             await context.bot.edit_message_reply_markup(
                 chat_id=CHANNEL_ID,
                 message_id=sent_cover_main.message_id,
@@ -1126,7 +1129,7 @@ async def finalize_multi_series_upload(update, context, status_message=None):
         success_message = (
             f"<blockquote>✅ Serie <b>{current_series['name']}</b> subida correctamente\n\n"
             f"📊 Detalles:\n"
-            f"- Temporadas: {len(successful_seasons)} de {len(current_series['seasons'])}\n"
+            f"- Temporadas: {processed_seasons} de {total_seasons}\n"
             f"- Episodios subidos: {total_episodes}\n"
         )
         
