@@ -6787,15 +6787,20 @@ def main() -> None:
     
     # Grupo -10: Handlers para carga masiva (load)
     application.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND & filters.User(user_id=ADMIN_IDS) & 
-        filters.ChatType.PRIVATE & 
-        filters.CustomFilter(lambda msg: context.bot_data.get('load_state', LOAD_STATE_INACTIVE) != LOAD_STATE_INACTIVE),
-        handle_content_name
+        filters.TEXT 
+        & ~filters.COMMAND 
+        & filters.User(user_id=ADMIN_IDS) 
+        & filters.ChatType.PRIVATE,
+        handle_content_name,
+        block=True
     ), group=-10)
 
     application.add_handler(MessageHandler(
-        (filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_id=ADMIN_IDS),
-        handle_load_content
+        (filters.VIDEO | filters.Document.ALL) 
+        & ~filters.COMMAND 
+        & filters.User(user_id=ADMIN_IDS),
+        handle_load_content,
+        block=True
     ), group=-10)
     
     # Grupo -5: Handler para upser
@@ -6812,10 +6817,11 @@ def main() -> None:
     
     # Grupo 1: Handler para búsquedas de texto (menor prioridad)
     application.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND & 
-        filters.ChatType.PRIVATE &
-        filters.CustomFilter(lambda msg: context.bot_data.get('load_state', LOAD_STATE_INACTIVE) == LOAD_STATE_INACTIVE),
-        handle_search
+        filters.TEXT 
+        & ~filters.COMMAND 
+        & filters.ChatType.PRIVATE,
+        handle_search,
+        block=True
     ), group=1)
 
     # Tareas periódicas
