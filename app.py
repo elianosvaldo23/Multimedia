@@ -7162,34 +7162,34 @@ def main() -> None:
     # Handlers organizados por prioridad (grupos)
     # Grupo -12: Handlers para el comando ser (mayor prioridad)
     application.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND & filters.User(user_ids=ADMIN_IDS),
+        filters.TEXT & ~filters.COMMAND & filters.User(user_id=ADMIN_IDS),
         handle_series_name
     ), group=-15)
 
     application.add_handler(MessageHandler(
-        (filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_ids=ADMIN_IDS),
+        (filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_id=ADMIN_IDS),
         handle_series_content
     ), group=-15)
 
     # Grupo -11: Handlers para el comando add
     application.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND & filters.User(user_ids=ADMIN_IDS),
+        filters.TEXT & ~filters.COMMAND & filters.User(user_id=ADMIN_IDS),
         handle_add_name
     ), group=-11)
     
     application.add_handler(MessageHandler(
-        (filters.PHOTO | filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_ids=ADMIN_IDS),
+        (filters.PHOTO | filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_id=ADMIN_IDS),
         handle_add_content
     ), group=-11)
     
     # Grupo -10: Handlers para carga masiva (load)
     application.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND & filters.User(user_ids=ADMIN_IDS),
+        filters.TEXT & ~filters.COMMAND & filters.User(user_id=ADMIN_IDS),
         handle_content_name
     ), group=-10)
 
     application.add_handler(MessageHandler(
-        (filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_ids=ADMIN_IDS),
+        (filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_id=ADMIN_IDS),
         handle_load_content
     ), group=-10)
     
