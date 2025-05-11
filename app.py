@@ -25,6 +25,8 @@ from urllib.parse import urlparse
 from telegram.ext import PicklePersistence
 import signal
 import sys
+from telegram.ext import filters
+from telegram.constants import ChatType
 
 def handle_exit(signum, frame):
     """Maneja señales de terminación"""
@@ -6786,7 +6788,8 @@ def main() -> None:
     # Grupo -10: Handlers para carga masiva (load)
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND & filters.User(user_id=ADMIN_IDS) & 
-        filters.create(lambda msg: context.bot_data.get('load_state', LOAD_STATE_INACTIVE) != LOAD_STATE_INACTIVE),
+        filters.ChatType.PRIVATE & 
+        filters.CustomFilter(lambda msg: context.bot_data.get('load_state', LOAD_STATE_INACTIVE) != LOAD_STATE_INACTIVE),
         handle_content_name
     ), group=-10)
 
@@ -6810,7 +6813,8 @@ def main() -> None:
     # Grupo 1: Handler para búsquedas de texto (menor prioridad)
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND & 
-        filters.create(lambda msg: context.bot_data.get('load_state', LOAD_STATE_INACTIVE) == LOAD_STATE_INACTIVE),
+        filters.ChatType.PRIVATE &
+        filters.CustomFilter(lambda msg: context.bot_data.get('load_state', LOAD_STATE_INACTIVE) == LOAD_STATE_INACTIVE),
         handle_search
     ), group=1)
 
