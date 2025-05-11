@@ -46,6 +46,11 @@ class Database:
             logger.error(f"Error al conectar con MongoDB: {e}")
             raise e
     
+            self.search_cache = self.db['search_cache']
+    
+    # Crear índice TTL para expiración automática (30 días = 2592000 segundos)
+            self.search_cache.create_index("timestamp", expireAfterSeconds=2592000)  # 30 días    
+    
     def _create_indexes(self):
         """Crear índices para optimizar consultas"""
         try:
@@ -475,13 +480,13 @@ class Database:
             logger.error(f"Error al obtener usuarios por plan: {e}")
             return 0
     
-    def get_all_user_ids(self):
+    def get_all_users(self):
         """Obtener todos los IDs de usuarios"""
         try:
-            users = self.users.find({}, {"user_id": 1})
-            return [user["user_id"] for user in users]
+            users = list(self.db.users.find({}, {'user_id': 1}))
+            return users
         except Exception as e:
-            logger.error(f"Error al obtener todos los IDs de usuarios: {e}")
+            logger.error(f"Error getting all users: {e}")
             return []
     
     def add_series(self, series_id, title, description, cover_message_id, added_by):
