@@ -6813,15 +6813,6 @@ def main() -> None:
         handle_multi_seasons_input,
     ), group=-4)
     
-    # Grupo 1: Handler para búsquedas de texto (menor prioridad)
-    application.add_handler(MessageHandler(
-        filters.TEXT 
-        & ~filters.COMMAND 
-        & filters.ChatType.PRIVATE,
-        handle_search,
-        block=True
-    ), group=1)
-
     # Tareas periódicas
     application.job_queue.run_repeating(
         check_plan_expiry,
