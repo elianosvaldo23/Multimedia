@@ -5682,11 +5682,11 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin command to broadcast a message to all users"""
     user = update.effective_user
     
-    # Check if user is admin
-    if user.id not in ADMIN_IDS:
+    # Verificar que el usuario es administrador
+    if not is_admin(user.id):
         return
     
-    # Check arguments
+    # Verificar argumentos
     if not context.args:
         await update.message.reply_text(
             "Uso: /broadcast mensaje",
@@ -5696,38 +5696,48 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     message = " ".join(context.args)
     
-    # Get all user IDS
-    user_id = db.get_all_user_id()
-    
-    sent_count = 0
-    failed_count = 0
-    
-    await update.message.reply_text(
-        f"Iniciando difusión a {len(user_id)} usuarios...",
-        parse_mode=ParseMode.HTML
-    )
-    
-    for user_id in user_id:
-        try:
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=f"<blockquote>📢 <b>Anuncio Oficial</b>\n\n</blockquote>{message}",
-                parse_mode=ParseMode.HTML
-            )
-            sent_count += 1
-            
-            # Add a small delay to avoid hitting rate limits
-            await asyncio.sleep(0.05)
-        except Exception as e:
-            logger.error(f"Error sending broadcast to {user_id}: {e}")
-            failed_count += 1
-    
-    await update.message.reply_text(
-        f"<b>Difusión completada:</b>\n"
-        f"✅ Enviados: {sent_count}\n"
-        f"❌ Fallidos: {failed_count}",
-        parse_mode=ParseMode.HTML
-    )
+    try:
+        # Obtener todos los usuarios usando el método correcto
+        # Asumiendo que el método se llama get_all_users() y devuelve una lista de diccionarios
+        all_users = db.get_all_users()  # Este método debe existir en tu clase Database
+        user_ids = [user['user_id'] for user in all_users]  # Extraer solo los IDs
+        
+        sent_count = 0
+        failed_count = 0
+        
+        await update.message.reply_text(
+            f"<blockquote>📢 Iniciando difusión a {len(user_ids)} usuarios...</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        
+        for user_id in user_ids:
+            try:
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text=f"<blockquote>📢 <b>Anuncio Oficial</b>\n\n{message}</blockquote>",
+                    parse_mode=ParseMode.HTML
+                )
+                sent_count += 1
+                
+                # Pequeña pausa para evitar límites de rate
+                await asyncio.sleep(0.05)
+            except Exception as e:
+                logger.error(f"Error enviando broadcast a {user_id}: {e}")
+                failed_count += 1
+        
+        await update.message.reply_text(
+            f"<blockquote>📊 <b>Difusión completada:</b>\n"
+            f"✅ Enviados: {sent_count}\n"
+            f"❌ Fallidos: {failed_count}</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        
+    except Exception as e:
+        logger.error(f"Error en broadcast: {e}")
+        await update.message.reply_text(
+            "<blockquote>❌ Error al realizar la difusión. Por favor, intenta más tarde.</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
     
 async def upser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Comando para administradores para iniciar/finalizar la carga de series"""
