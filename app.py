@@ -56,9 +56,9 @@ CHANNEL_ID = -1002584219284
 GROUP_ID = -1002585538833
 SEARCH_CHANNEL_ID = -1002302159104
 
-def is_admin(user_id: int) -> bool:
+def is_admin(user_ids: int) -> bool:
     """Verificar si un usuario es administrador"""
-    return user_id in ADMIN_IDSS
+    return user_ids in ADMIN_IDSS
 
 # Add this at the top with other constants
 PLANS_INFO = PLANS
@@ -167,10 +167,10 @@ def truncate_description(description: str, max_length: int = 1000) -> str:
     return truncated
 
 # Función para verificar membresía al canal
-async def is_channel_member(user_id, context):
+async def is_channel_member(user_ids, context):
     """Verifica si un usuario es miembro del canal principal."""
     try:
-        member = await context.bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
+        member = await context.bot.get_chat_member(chat_id=CHANNEL_ID, user_ids=user_ids)
         return member.status in ['member', 'administrator', 'creator']
     except TelegramError as e:
         logger.error(f"Error verificando membresía: {e}")
@@ -182,11 +182,11 @@ def check_channel_membership(func):
     @wraps(func)
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
         if update.effective_chat.type == 'private':  # Solo verificar en chats privados
-            user_id = update.effective_user.id
+            user_ids = update.effective_user.id
             
             # Verificar si el usuario ya está marcado como verificado recientemente (caché)
             verification_cache = context.bot_data.setdefault('verification_cache', {})
-            cached_until = verification_cache.get(user_id)
+            cached_until = verification_cache.get(user_ids)
             
             current_time = datetime.now()
             if cached_until and current_time < cached_until:
@@ -194,7 +194,7 @@ def check_channel_membership(func):
                 return await func(update, context, *args, **kwargs)
             
             # Verificar membresía
-            is_member = await is_channel_member(user_id, context)
+            is_member = await is_channel_member(user_ids, context)
             
             if not is_member:
                 # Usuario no es miembro, mostrar mensaje de suscripción
@@ -214,7 +214,7 @@ def check_channel_membership(func):
             
             # Si llega aquí, el usuario es miembro, lo guardamos en caché para reducir verificaciones
             # Caché por 30 minutos
-            verification_cache[user_id] = current_time + timedelta(minutes=30)
+            verification_cache[user_ids] = current_time + timedelta(minutes=30)
             
         # Si es un chat grupal o el usuario es miembro, ejecutar la función original
         return await func(update, context, *args, **kwargs)
@@ -403,11 +403,11 @@ async def send_content_message(chat_id, context, msg_id):
         
 async def handle_series_request(update: Update, context: ContextTypes.DEFAULT_TYPE, series_id: int) -> None:
     """Manejar la solicitud de visualización de una serie"""
-    user_id = update.effective_user.id
-    user_data = db.get_user(user_id)
+    user_ids = update.effective_user.id
+    user_data = db.get_user(user_ids)
     
     # Verificar límites de búsqueda
-    if not db.increment_daily_usage(user_id):
+    if not db.increment_daily_usage(user_ids):
         # Mostrar mensaje de límite excedido y opciones de planes
         keyboard = []
         for plan_id, plan in PLANS_INFO.items():
@@ -1140,8 +1140,8 @@ async def finalize_multi_series_upload(update, context, status_message=None):
 
 async def send_episode(query, context, series_id, episode_number):
     """Enviar un capítulo específico al usuario"""
-    user_id = query.from_user.id
-    user_data = db.get_user(user_id)
+    user_ids = query.from_user.id
+    user_data = db.get_user(user_ids)
     can_forward = user_data and user_data.get('can_forward', False)
     
     await query.answer("Procesando tu solicitud...")
@@ -2569,7 +2569,7 @@ async def repair_multi_series(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def handle_season_selection(query, context, season_id):
     """Manejar la selección de una temporada"""
-    user_id = query.from_user.id
+    user_ids = query.from_user.id
     
     await query.answer("Cargando capítulos...")
     
@@ -2709,8 +2709,8 @@ async def handle_back_to_seasons(query, context, series_id):
 
 async def send_multi_episode(query, context, message_id):
     """Enviar un capítulo específico de una serie multi-temporada"""
-    user_id = query.from_user.id
-    user_data = db.get_user(user_id)
+    user_ids = query.from_user.id
+    user_data = db.get_user(user_ids)
     can_forward = user_data and user_data.get('can_forward', False)
     
     await query.answer("Procesando tu solicitud...")
@@ -2762,8 +2762,8 @@ async def send_multi_episode(query, context, message_id):
 
 async def send_all_multi_episodes(query, context, season_id):
     """Enviar todos los capítulos de una temporada"""
-    user_id = query.from_user.id
-    user_data = db.get_user(user_id)
+    user_ids = query.from_user.id
+    user_data = db.get_user(user_ids)
     can_forward = user_data and user_data.get('can_forward', False)
     
     await query.answer("Enviando todos los capítulos...")
@@ -4294,8 +4294,8 @@ def extract_title_from_content(caption, file_name):
                         
 async def send_all_episodes(query, context, series_id):
     """Enviar todos los capítulos de una serie al usuario"""
-    user_id = query.from_user.id
-    user_data = db.get_user(user_id)
+    user_ids = query.from_user.id
+    user_data = db.get_user(user_ids)
     can_forward = user_data and user_data.get('can_forward', False)
     
     await query.answer("Enviando todos los capítulos...")
@@ -4527,7 +4527,7 @@ async def search_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not update.message:
         return
         
-    user_id = update.effective_user.id
+    user_ids = update.effective_user.id
     
     # Get search query from command arguments
     if not context.args:
@@ -4541,7 +4541,7 @@ async def search_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     query = " ".join(context.args).lower()
     
     # Check user's search limits
-    user_data = db.get_user(user_id)
+    user_data = db.get_user(user_ids)
     
     if not user_data:
         await update.message.reply_text(
@@ -4551,7 +4551,7 @@ async def search_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
     
     # Check if user can make more searches today
-    if not db.increment_daily_usage(user_id):
+    if not db.increment_daily_usage(user_ids):
         # Show purchase plans if limit exceeded
         keyboard = []
         for plan_id, plan in PLANS_INFO.items():
@@ -4580,18 +4580,18 @@ async def search_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     )
     
     # Initialize user preferences if not exist
-    if user_id not in user_preferences:
-        user_preferences[user_id] = {
+    if user_ids not in user_preferences:
+        user_preferences[user_ids] = {
             "max_results": 100,
             "show_previews": True,
             "sort_by_date": True
         }
     
     # Get user preferences
-    max_results = user_preferences[user_id]["max_results"]
+    max_results = user_preferences[user_ids]["max_results"]
     
     # Check if we have cached results for this query
-    cache_key = f"{query}_{user_id}"
+    cache_key = f"{query}_{user_ids}"
     if cache_key in search_cache:
         cache_time, results = search_cache[cache_key]
         # Check if cache is still valid
@@ -4760,7 +4760,7 @@ async def search_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await asyncio.sleep(0.01)
         
         # Sort matches by relevance
-        if user_id in user_preferences and user_preferences[user_id]["sort_by_date"]:
+        if user_ids in user_preferences and user_preferences[user_ids]["sort_by_date"]:
             # Sort by message ID (date) if user prefers
             potential_matches.sort(key=lambda x: x['id'], reverse=True)
         else:
@@ -4797,7 +4797,7 @@ async def handle_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         # Si el admin está en modo de carga masiva, no procesar como búsqueda
         return
         
-    user_id = update.effective_user.id
+    user_ids = update.effective_user.id
     query = update.message.text.lower()
     
     # Asignar el texto como argumentos para search_content
@@ -5004,8 +5004,8 @@ async def send_additional_messages(context, chat_id, msg_id, can_forward):
 
 async def handle_send_callback(query, context, msg_id):
     """Handle send content callback."""
-    user_id = query.from_user.id
-    user_data = db.get_user(user_id)
+    user_ids = query.from_user.id
+    user_data = db.get_user(user_ids)
     can_forward = user_data and user_data.get('can_forward', False)
 
     try:
@@ -5140,8 +5140,8 @@ async def handle_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    user_id = query.from_user.id
-    user_data = db.get_user(user_id)
+    user_ids = query.from_user.id
+    user_data = db.get_user(user_ids)
     
     if not user_data:
         await query.edit_message_text(
@@ -5202,7 +5202,7 @@ async def handle_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reset_text = f"{hours:02d}:{minutes:02d}"
     
     # Get referral count
-    referral_count = db.get_referral_count(user_id)
+    referral_count = db.get_referral_count(user_ids)
     
     # Format join date
     join_date = user_data.get('join_date', now.strftime('%Y-%m-%d %H:%M:%S'))
@@ -5221,7 +5221,7 @@ async def handle_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"👤 <b>Perfil de Usuario</b>\n\n"
         f"<blockquote>Nombre: {query.from_user.first_name}\n"
         f"Saldo: {user_data.get('balance', 0)} 💎\n"
-        f"ID: {user_id}\n"
+        f"ID: {user_ids}\n"
         f"Plan: {plan_name}\n"
         f"{expiration_text}"
         f"Pedidos restantes: {requests_remaining_text}\n"
@@ -5235,7 +5235,7 @@ async def handle_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Create buttons
     keyboard = [
         [InlineKeyboardButton("Compartir Enlace de referencia 🔗", 
-                             url=f"https://t.me/share/url?url=https://t.me/MultimediaTVbot?start=ref_{user_id}&text=¡Únete%20y%20ve%20películas%20conmigo!")],
+                             url=f"https://t.me/share/url?url=https://t.me/MultimediaTVbot?start=ref_{user_ids}&text=¡Únete%20y%20ve%20películas%20conmigo!")],
         [InlineKeyboardButton("Volver 🔙", callback_data="main_menu")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -5251,8 +5251,8 @@ async def handle_plans(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    user_id = query.from_user.id
-    user_data = db.get_user(user_id)
+    user_ids = query.from_user.id
+    user_data = db.get_user(user_ids)
     
     if not user_data:
         await query.edit_message_text(
@@ -5308,8 +5308,8 @@ async def handle_plan_details(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     await query.answer()
     
-    user_id = query.from_user.id
-    user_data = db.get_user(user_id)
+    user_ids = query.from_user.id
+    user_data = db.get_user(user_ids)
     callback_data = query.data
     
     if not user_data:
@@ -5511,8 +5511,8 @@ async def handle_make_request(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     await query.answer()
     
-    user_id = query.from_user.id
-    user_data = db.get_user(user_id)
+    user_ids = query.from_user.id
+    user_data = db.get_user(user_ids)
     
     if not user_data:
         await query.edit_message_text(
@@ -5522,7 +5522,7 @@ async def handle_make_request(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
     
     # Check if user has requests left
-    requests_left = db.get_requests_left(user_id)
+    requests_left = db.get_requests_left(user_ids)
     if requests_left <= 0:
         await query.edit_message_text(
             "Has alcanzado el límite de pedidos diarios para tu plan.\n"
@@ -5550,12 +5550,12 @@ async def handle_make_request(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
     
     # Update user's request count
-    db.update_request_count(user_id)
+    db.update_request_count(user_ids)
     
     # Send request to admin
     try:
         keyboard = [
-            [InlineKeyboardButton("Aceptar ✅", callback_data=f"accept_req_{user_id}_{content_name}")]
+            [InlineKeyboardButton("Aceptar ✅", callback_data=f"accept_req_{user_ids}_{content_name}")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -5563,7 +5563,7 @@ async def handle_make_request(update: Update, context: ContextTypes.DEFAULT_TYPE
             chat_id=ADMIN_IDS,
             text=f"<blockquote>📩 <b>Nuevo Pedido</b>\n\n</blockquote>"
                  f"Usuario: {query.from_user.first_name} (@{query.from_user.username})\n"
-                 f"ID: {user_id}\n"
+                 f"ID: {user_ids}\n"
                  f"Tipo: {'Película' if req_type == 'movie' else 'Serie'}\n"
                  f"Nombre: {content_name}",
             reply_markup=reply_markup,
@@ -5595,12 +5595,12 @@ async def handle_accept_request(update: Update, context: ContextTypes.DEFAULT_TY
     
     # Parse callback data
     try:
-        _, req_type, user_id, content_name = query.data.split('_', 3)
-        user_id = int(user_id)
+        _, req_type, user_ids, content_name = query.data.split('_', 3)
+        user_ids = int(user_ids)
         
         # Notify user that request was accepted
         await context.bot.send_message(
-            chat_id=user_id,
+            chat_id=user_ids,
             text=f"✅ ¡Buenas noticias! Tu solicitud para '<b>{content_name}</b>' ha sido aceptada.\n"
                  f"<blockquote>El contenido estará disponible pronto en el bot. Podrás buscarlo usando /search.</blockquote>",
             parse_mode=ParseMode.HTML
@@ -5649,22 +5649,22 @@ async def set_user_plan(update: Update, context: ContextTypes.DEFAULT_TYPE):
         plan_map = {1: 'pro', 2: 'plus', 3: 'ultra'}
         plan_type = plan_map[plan_number]
         
-        # Get user_id from username
-        user_id = db.get_user_id_by_username(username)
-        if not user_id:
+        # Get user_ids from username
+        user_ids = db.get_user_ids_by_username(username)
+        if not user_ids:
             await update.message.reply_text(f"Usuario @{username} no encontrado en la base de datos.",
                                           parse_mode=ParseMode.HTML)
             return
         
         # Update user's plan
         expiry_date = datetime.now() + timedelta(days=30)
-        db.update_plan(user_id, plan_type, expiry_date)
+        db.update_plan(user_ids, plan_type, expiry_date)
         
         # Notify user about plan change
         plan_name = PLANS_INFO[plan_type]['name']
         try:
             await context.bot.send_message(
-                chat_id=user_id,
+                chat_id=user_ids,
                 text=f"🎉 ¡Felicidades! Tu plan ha sido actualizado a <b>{plan_name}</b>.\n"
                      f"<blockquote>Expira el: {expiry_date.strftime('%d/%m/%Y')}\n"
                      f"Disfruta de todos los beneficios de tu nuevo plan.</blockquote>",
@@ -5762,7 +5762,7 @@ async def add_gift_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def redeem_gift_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Command to redeem a gift code"""
-    user_id = update.effective_user.id
+    user_ids = update.effective_user.id
     
     # Check arguments
     if not context.args:
@@ -5789,7 +5789,7 @@ async def redeem_gift_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Update user's plan
         plan_type = gift_code_data['plan_type']
         expiry_date = datetime.now() + timedelta(days=30)
-        db.update_plan(user_id, plan_type, expiry_date)
+        db.update_plan(user_ids, plan_type, expiry_date)
         
         # Update gift code usage
         db.update_gift_code_usage(code)
@@ -5821,7 +5821,7 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Check arguments
     if not context.args:
         await update.message.reply_text(
-            "Uso: /ban @username o /ban user_id",
+            "Uso: /ban @username o /ban user_ids",
             parse_mode=ParseMode.HTML
         )
         return
@@ -5829,40 +5829,40 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target = context.args[0]
     
     try:
-        # Check if target is username or user_id
+        # Check if target is username or user_ids
         if target.startswith('@'):
             username = target.replace('@', '')
-            user_id = db.get_user_id_by_username(username)
-            if not user_id:
+            user_ids = db.get_user_ids_by_username(username)
+            if not user_ids:
                 await update.message.reply_text(f"Usuario {target} no encontrado.",
                                               parse_mode=ParseMode.HTML)
                 return
         else:
             try:
-                user_id = int(target)
-                if not db.user_exists(user_id):
-                    await update.message.reply_text(f"Usuario con ID {user_id} no encontrado.",
+                user_ids = int(target)
+                if not db.user_exists(user_ids):
+                    await update.message.reply_text(f"Usuario con ID {user_ids} no encontrado.",
                                                   parse_mode=ParseMode.HTML)
                     return
             except ValueError:
-                await update.message.reply_text("Formato inválido. Usa /ban @username o /ban user_id",
+                await update.message.reply_text("Formato inválido. Usa /ban @username o /ban user_ids",
                                               parse_mode=ParseMode.HTML)
                 return
         
         # Ban user
-        db.ban_user(user_id)
+        db.ban_user(user_ids)
         
         # Notify user
         try:
             await context.bot.send_message(
-                chat_id=user_id,
+                chat_id=user_ids,
                 text="⛔ Has sido baneado del bot MultimediaTv. Si crees que es un error, contacta al administrador.",
                 parse_mode=ParseMode.HTML
             )
         except Exception as e:
             logger.error(f"Error notifying banned user: {e}")
         
-        await update.message.reply_text(f"Usuario con ID {user_id} ha sido baneado.",
+        await update.message.reply_text(f"Usuario con ID {user_ids} ha sido baneado.",
                                       parse_mode=ParseMode.HTML)
     except Exception as e:
         logger.error(f"Error banning user: {e}")
@@ -5997,7 +5997,7 @@ async def upload_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def request_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Command to request a specific movie or series"""
-    user_id = update.effective_user.id
+    user_ids = update.effective_user.id
     
     # Check arguments
     if len(context.args) < 2:
@@ -6009,7 +6009,7 @@ async def request_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     # Check if user is banned
-    if db.is_user_banned(user_id):
+    if db.is_user_banned(user_ids):
         await update.message.reply_text(
             "No puedes realizar pedidos porque has sido baneado del bot.",
             parse_mode=ParseMode.HTML
@@ -6017,7 +6017,7 @@ async def request_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     # Check if user has requests left
-    requests_left = db.get_requests_left(user_id)
+    requests_left = db.get_requests_left(user_ids)
     if requests_left <= 0:
         await update.message.reply_text(
             "Has alcanzado el límite de pedidos diarios para tu plan.\n"
@@ -6030,12 +6030,12 @@ async def request_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     content_name = " ".join(context.args[1:])
     
     # Update user's request count
-    db.update_request_count(user_id)
+    db.update_request_count(user_ids)
     
     # Send request to admin
     try:
         keyboard = [
-            [InlineKeyboardButton("Aceptar ✅", callback_data=f"accept_req_{user_id}_{content_name}")]
+            [InlineKeyboardButton("Aceptar ✅", callback_data=f"accept_req_{user_ids}_{content_name}")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -6043,7 +6043,7 @@ async def request_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id=ADMIN_IDS,
             text=f"<blockquote>📩 <b>Nuevo Pedido</b>\n\</blockquote>n"
                  f"Usuario: {update.effective_user.first_name} (@{update.effective_user.username})\n"
-                 f"ID: {user_id}\n"
+                 f"ID: {user_ids}\n"
                  f"Año: {year}\n"
                  f"Nombre: {content_name}",
             reply_markup=reply_markup,
@@ -6151,20 +6151,20 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = " ".join(context.args)
     
     # Get all user IDs
-    user_ids = db.get_all_user_ids()
+    user_idss = db.get_all_user_idss()
     
     sent_count = 0
     failed_count = 0
     
     await update.message.reply_text(
-        f"Iniciando difusión a {len(user_ids)} usuarios...",
+        f"Iniciando difusión a {len(user_idss)} usuarios...",
         parse_mode=ParseMode.HTML
     )
     
-    for user_id in user_ids:
+    for user_ids in user_idss:
         try:
             await context.bot.send_message(
-                chat_id=user_id,
+                chat_id=user_ids,
                 text=f"<blockquote>📢 <b>Anuncio Oficial</b>\n\n</blockquote>{message}",
                 parse_mode=ParseMode.HTML
             )
@@ -6173,7 +6173,7 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Add a small delay to avoid hitting rate limits
             await asyncio.sleep(0.05)
         except Exception as e:
-            logger.error(f"Error sending broadcast to {user_id}: {e}")
+            logger.error(f"Error sending broadcast to {user_ids}: {e}")
             failed_count += 1
     
     await update.message.reply_text(
@@ -6804,16 +6804,16 @@ async def verify_channel_membership(update: Update, context: ContextTypes.DEFAUL
     await query.answer()
     
     user = query.from_user
-    user_id = user.id
+    user_ids = user.id
     
     # Verificar membresía en tiempo real
-    is_member = await is_channel_member(user_id, context)
+    is_member = await is_channel_member(user_ids, context)
     
     if is_member:
         # Asegurarse de que el usuario esté registrado
-        if not db.user_exists(user_id):
+        if not db.user_exists(user_ids):
             db.add_user(
-                user_id,
+                user_ids,
                 user.username,
                 user.first_name,
                 user.last_name
@@ -6821,7 +6821,7 @@ async def verify_channel_membership(update: Update, context: ContextTypes.DEFAUL
         
         # Actualizar caché de verificación
         verification_cache = context.bot_data.setdefault('verification_cache', {})
-        verification_cache[user_id] = datetime.now() + timedelta(minutes=30)
+        verification_cache[user_ids] = datetime.now() + timedelta(minutes=30)
         
         # Mostrar mensaje de éxito y redirigir al menú principal
         keyboard = [
@@ -6943,8 +6943,8 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             return
     
     # Verificar membresía antes de procesar otros callbacks
-    user_id = query.from_user.id
-    is_member = await is_channel_member(user_id, context)
+    user_ids = query.from_user.id
+    is_member = await is_channel_member(user_ids, context)
     
     if not is_member and data not in ["verify_membership"]:
         # Usuario no es miembro, mostrar mensaje de suscripción
@@ -7034,20 +7034,20 @@ async def check_plan_expiry(context: ContextTypes.DEFAULT_TYPE):
         # Get users with expired plans
         expired_users = db.get_expired_plans()
         
-        for user_id in expired_users:
+        for user_ids in expired_users:
             # Reset user to basic plan
-            db.update_plan(user_id, 'basic', None)
+            db.update_plan(user_ids, 'basic', None)
             
             # Notify user
             try:
                 await context.bot.send_message(
-                    chat_id=user_id,
+                    chat_id=user_ids,
                     text="⚠️ Tu plan premium ha expirado. Has sido cambiado al plan básico.\n"
                          "<blockquote>Para renovar tu plan, utiliza el botón 'Planes 📜' en el menú principal.</blockquote>",
                     parse_mode=ParseMode.HTML
                 )
             except Exception as e:
-                logger.error(f"Error notifying user {user_id} about plan expiry: {e}")
+                logger.error(f"Error notifying user {user_ids} about plan expiry: {e}")
     except Exception as e:
         logger.error(f"Error in plan expiry check: {e}")
 
@@ -7162,34 +7162,34 @@ def main() -> None:
     # Handlers organizados por prioridad (grupos)
     # Grupo -12: Handlers para el comando ser (mayor prioridad)
     application.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND & filters.User(user_id=ADMIN_IDS),
+        filters.TEXT & ~filters.COMMAND & filters.User(user_ids=ADMIN_IDS),
         handle_series_name
     ), group=-15)
 
     application.add_handler(MessageHandler(
-        (filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_id=ADMIN_IDS),
+        (filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_ids=ADMIN_IDS),
         handle_series_content
     ), group=-15)
 
     # Grupo -11: Handlers para el comando add
     application.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND & filters.User(user_id=ADMIN_IDS),
+        filters.TEXT & ~filters.COMMAND & filters.User(user_ids=ADMIN_IDS),
         handle_add_name
     ), group=-11)
     
     application.add_handler(MessageHandler(
-        (filters.PHOTO | filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_id=ADMIN_IDS),
+        (filters.PHOTO | filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_ids=ADMIN_IDS),
         handle_add_content
     ), group=-11)
     
     # Grupo -10: Handlers para carga masiva (load)
     application.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND & filters.User(user_id=ADMIN_IDS),
+        filters.TEXT & ~filters.COMMAND & filters.User(user_ids=ADMIN_IDS),
         handle_content_name
     ), group=-10)
 
     application.add_handler(MessageHandler(
-        (filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_id=ADMIN_IDS),
+        (filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND & filters.User(user_ids=ADMIN_IDS),
         handle_load_content
     ), group=-10)
     
