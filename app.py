@@ -514,7 +514,11 @@ async def handle_series_request(update: Update, context: ContextTypes.DEFAULT_TY
 async def ser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Comando para administradores para subir series con múltiples temporadas"""
     try:
-        # Verificar que el usuario es administrador
+        user = update.effective_user
+        if not user:
+            return
+    
+    # Verificar que el usuario es administrador
         if not is_admin(user.id):
             return
 
@@ -643,6 +647,11 @@ async def ser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 async def season_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Comando para indicar la temporada actual"""
     try:
+        user = update.effective_user
+        if not user:
+            return
+    
+    # Verificar que el usuario es administrador
         if not is_admin(user.id):
             return
 
@@ -715,7 +724,11 @@ async def season_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def handle_series_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manejar la recepción del nombre de la serie"""
     try:
-        # Verificar que el usuario es administrador
+        user = update.effective_user
+        if not user:
+            return
+    
+    # Verificar que el usuario es administrador
         if not is_admin(user.id):
             return
 
@@ -804,9 +817,13 @@ async def handle_series_name(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def cancel_ser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Cancelar el proceso de carga de series"""
     try:
-        # Verificar que el usuario es administrador
-        if not is_admin(user.id):
+        user = update.effective_user
+        if not user:
             return
+    
+    # Verificar que el usuario es administrador
+        if not is_admin(user.id):
+            return        
 
         # Verificar si hay un proceso activo
         if context.user_data.get('ser_state', SER_STATE_IDLE) == SER_STATE_IDLE:
@@ -840,10 +857,12 @@ async def cancel_ser_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def handle_series_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manejar la recepción de capítulos durante el proceso de serie"""
     try:
-        if not is_admin(user.id):
+        user = update.effective_user
+        if not user:
             return
-
-        if context.user_data.get('ser_state') != SER_STATE_RECEIVING:
+    
+    # Verificar que el usuario es administrador
+        if not is_admin(user.id):
             return
 
         # Inicializar la estructura de datos si no existe
@@ -1386,8 +1405,13 @@ async def imdb_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 async def a_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Comando para administradores para añadir series con múltiples temporadas"""
     # Verificar que el usuario es administrador
+    user = update.effective_user
+    if not user:
+        return
+    
+    # Verificar que el usuario es administrador
     if not is_admin(user.id):
-            return
+        return
     
     # Obtener el estado actual
     multi_state = context.user_data.get('multi_state', MULTI_SEASONS_STATE_IDLE)
@@ -1501,8 +1525,13 @@ async def a_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def cancel_multi_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Cancelar el proceso de carga de serie con múltiples temporadas"""
     # Verificar que el usuario es administrador
+    user = update.effective_user
+    if not user:
+        return
+    
+    # Verificar que el usuario es administrador
     if not is_admin(user.id):
-            return
+        return
     
     # Reiniciar el estado
     context.user_data['multi_state'] = MULTI_SEASONS_STATE_IDLE
@@ -1957,309 +1986,6 @@ async def finalize_multi_seasons_upload(update: Update, context: ContextTypes.DE
             parse_mode=ParseMode.HTML
         )
 
-async def fix_seasons(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Comando para administradores para corregir manualmente temporadas de una serie"""
-    # Verificar que el usuario es administrador
-    if not is_admin(user.id):
-            return
-    
-    # Verificar si se proporcionaron todos los argumentos necesarios
-    if len(context.args) < 4:
-        await update.message.reply_text(
-            "Uso: /fixseasons series_id season_number season_name episode_count\n"
-            "Ejemplo: /fixseasons 1746132017 2 \"La Que Se Avecina: Temporada 2\" 3",
-            parse_mode=ParseMode.HTML
-        )
-        return
-    
-    try:
-        # Obtener argumentos
-        series_id = int(context.args[0])
-        season_number = int(context.args[1])
-        season_name = " ".join(context.args[2:-1])  # Todo excepto el último argumento
-        episode_count = int(context.args[-1])  # El último argumento
-        
-        # Verificar si la serie existe
-        series = db.get_multi_series(series_id)
-        if not series:
-            await update.message.reply_text(
-                "❌ Serie no encontrada. Verifica el ID e intenta nuevamente.",
-                parse_mode=ParseMode.HTML
-            )
-            return
-        
-        # Generar ID de temporada
-        season_id = int(f"{series_id}{season_number:03d}")
-        
-        # Verificar si ya existe la temporada
-        existing_season = db.db.seasons.find_one({'season_id': season_id})
-        
-        # Enviar mensaje de estado
-        status_message = await update.message.reply_text(
-            f"<blockquote>⏳ Procesando corrección para temporada <b>{season_name}</b>...</blockquote>",
-            parse_mode=ParseMode.HTML
-        )
-        
-        # Crear o actualizar la temporada
-        if existing_season:
-            db.db.seasons.update_one(
-                {'season_id': season_id},
-                {'$set': {
-                    'series_id': series_id,
-                    'season_name': season_name,
-                    'updated_date': datetime.now()
-                }}
-            )
-            action = "actualizada"
-        else:
-            db.db.seasons.insert_one({
-                'season_id': season_id,
-                'series_id': series_id,
-                'season_name': season_name,
-                'added_date': datetime.now()
-            })
-            action = "creada"
-        
-        # Verificar episodios ya existentes para esta temporada
-        existing_episodes = list(db.db.season_episodes.find({'season_id': season_id}))
-        
-        # Si ya hay episodios, preguntar si se deben mantener o reemplazar
-        if existing_episodes:
-            await status_message.edit_text(
-                f"<blockquote>⚠️ Ya existen {len(existing_episodes)} episodios para esta temporada.\n"
-                f"La temporada ha sido {action}, pero los episodios no se han modificado.</blockquote>",
-                parse_mode=ParseMode.HTML
-            )
-        else:
-            # Buscar episodios que puedan pertenecer a esta temporada
-            # Este es un intento de recuperación basado en los capítulos ya subidos
-            possible_episodes = []
-            
-            # Buscar capítulos en el canal de búsqueda con texto que coincide con la temporada
-            await status_message.edit_text(
-                f"<blockquote>⏳ Buscando posibles episodios para temporada <b>{season_name}</b>...</blockquote>",
-                parse_mode=ParseMode.HTML
-            )
-            
-            # Crear episodios ficticios con IDS secuenciales
-            for i in range(1, episode_count + 1):
-                # Buscar mensajes existentes en el canal que coincidan con este capítulo
-                search_term = f"{season_name.lower()} capítulo {i}"
-                
-                # Aquí normalmente buscaríamos en el canal, pero como no tenemos acceso directo,
-                # usamos IDS secuenciales ficticios como ejemplo
-                # En un caso real, necesitarías identificar los IDS correctos de los mensajes
-                
-                # Ejemplo de ID ficticio: usar el ID de la temporada + número de episodio
-                # Esto es solo ilustrativo - en un caso real deberíamos buscar los IDS correctos
-                fake_message_id = int(f"{season_id}{i:02d}")
-                
-                # Guardar el episodio en la base de datos
-                try:
-                    db.add_season_episode(season_id, i, fake_message_id)
-                    possible_episodes.append(f"Episodio {i}")
-                except Exception as e:
-                    logger.error(f"Error al crear episodio {i}: {e}")
-            
-            # Informar al administrador
-            if possible_episodes:
-                await status_message.edit_text(
-                    f"<blockquote>✅ Temporada <b>{season_name}</b> {action} correctamente.\n"
-                    f"Se han creado {len(possible_episodes)} episodios ficticios.\n\n"
-                    f"⚠️ IMPORTANTE: Los IDS de mensajes son ficticios, debes reemplazarlos con IDS reales usando otro comando.</blockquote>",
-                    parse_mode=ParseMode.HTML
-                )
-            else:
-                await status_message.edit_text(
-                    f"<blockquote>✅ Temporada <b>{season_name}</b> {action} correctamente.\n"
-                    f"No se han creado episodios. Necesitarás añadirlos manualmente.</blockquote>",
-                    parse_mode=ParseMode.HTML
-                )
-        
-        # Ejecutar diagnóstico actualizado
-        await asyncio.sleep(1)
-        await diagnose_multi_series(update, context)
-        
-    except ValueError as ve:
-        await update.message.reply_text(
-            f"❌ Error de formato: {str(ve)}",
-            parse_mode=ParseMode.HTML
-        )
-    except Exception as e:
-        logger.error(f"Error en fix_seasons: {e}")
-        await update.message.reply_text(
-            f"❌ Error desconocido: {str(e)[:100]}",
-            parse_mode=ParseMode.HTML
-        )
-
-async def migrate_episodes(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Comando para administradores para migrar episodios entre temporadas"""
-    # Verificar que el usuario es administrador
-    if not is_admin(user.id):
-            return
-    
-    # Verificar si se proporcionaron todos los argumentos necesarios
-    if len(context.args) < 2:
-        await update.message.reply_text(
-            "Uso: /migrateepisodes source_season_id target_season_id\n"
-            "Ejemplo: /migrateepisodes 1746132017001 1746132017002",
-            parse_mode=ParseMode.HTML
-        )
-        return
-    
-    try:
-        # Obtener argumentos
-        source_season_id = int(context.args[0])
-        target_season_id = int(context.args[1])
-        
-        # Verificar si las temporadas existen
-        source_season = db.db.seasons.find_one({'season_id': source_season_id})
-        target_season = db.db.seasons.find_one({'season_id': target_season_id})
-        
-        if not source_season:
-            await update.message.reply_text(
-                f"❌ Temporada de origen ID {source_season_id} no encontrada.",
-                parse_mode=ParseMode.HTML
-            )
-            return
-        
-        if not target_season:
-            await update.message.reply_text(
-                f"❌ Temporada de destino ID {target_season_id} no encontrada.",
-                parse_mode=ParseMode.HTML
-            )
-            return
-        
-        # Enviar mensaje de estado
-        status_message = await update.message.reply_text(
-            f"<blockquote>⏳ Preparando migración de episodios de <b>{source_season['season_name']}</b> a <b>{target_season['season_name']}</b>...</blockquote>",
-            parse_mode=ParseMode.HTML
-        )
-        
-        # Obtener episodios de temporada origen
-        source_episodes = list(db.db.season_episodes.find({'season_id': source_season_id}))
-        
-        if not source_episodes:
-            await status_message.edit_text(
-                f"<blockquote>❌ No se encontraron episodios en la temporada de origen.</blockquote>",
-                parse_mode=ParseMode.HTML
-            )
-            return
-        
-        # Obtener episodios existentes en temporada destino
-        target_episodes = list(db.db.season_episodes.find({'season_id': target_season_id}))
-        
-        # Si ya hay episodios en el destino, advertir
-        if target_episodes:
-            await status_message.edit_text(
-                f"<blockquote>⚠️ Ya existen {len(target_episodes)} episodios en la temporada destino.\n"
-                f"¿Deseas continuar con la migración y añadir {len(source_episodes)} episodios más?\n\n"
-                f"Usa /confirmmigrate {source_season_id} {target_season_id} para confirmar.</blockquote>",
-                parse_mode=ParseMode.HTML
-            )
-            return
-        
-        # Si no hay episodios en el destino, proceder con migración
-        await migrate_episodes_process(update, context, status_message, source_season_id, target_season_id)
-        
-    except ValueError as ve:
-        await update.message.reply_text(
-            f"❌ Error de formato: {str(ve)}",
-            parse_mode=ParseMode.HTML
-        )
-    except Exception as e:
-        logger.error(f"Error en migrate_episodes: {e}")
-        await update.message.reply_text(
-            f"❌ Error desconocido: {str(e)[:100]}",
-            parse_mode=ParseMode.HTML
-        )
-
-async def confirm_migrate(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Confirmar migración de episodios entre temporadas"""
-    # Verificar que el usuario es administrador
-    if not is_admin(user.id):
-            return
-    
-    # Verificar si se proporcionaron todos los argumentos necesarios
-    if len(context.args) < 2:
-        await update.message.reply_text(
-            "Uso: /confirmmigrate source_season_id target_season_id\n"
-            "Ejemplo: /confirmmigrate 1746132017001 1746132017002",
-            parse_mode=ParseMode.HTML
-        )
-        return
-    
-    try:
-        # Obtener argumentos
-        source_season_id = int(context.args[0])
-        target_season_id = int(context.args[1])
-        
-        # Enviar mensaje de estado
-        status_message = await update.message.reply_text(
-            f"<blockquote>⏳ Iniciando migración confirmada...</blockquote>",
-            parse_mode=ParseMode.HTML
-        )
-        
-        # Ejecutar proceso de migración
-        await migrate_episodes_process(update, context, status_message, source_season_id, target_season_id)
-        
-    except ValueError as ve:
-        await update.message.reply_text(
-            f"❌ Error de formato: {str(ve)}",
-            parse_mode=ParseMode.HTML
-        )
-    except Exception as e:
-        logger.error(f"Error en confirm_migrate: {e}")
-        await update.message.reply_text(
-            f"❌ Error desconocido: {str(e)[:100]}",
-            parse_mode=ParseMode.HTML
-        )
-
-async def migrate_episodes_process(update, context, status_message, source_season_id, target_season_id):
-    """Proceso de migración de episodios"""
-    try:
-        # Obtener información de las temporadas
-        source_season = db.db.seasons.find_one({'season_id': source_season_id})
-        target_season = db.db.seasons.find_one({'season_id': target_season_id})
-        
-        # Obtener episodios de temporada origen
-        source_episodes = list(db.db.season_episodes.find({'season_id': source_season_id}))
-        
-        await status_message.edit_text(
-            f"<blockquote>⏳ Migrando {len(source_episodes)} episodios de <b>{source_season['season_name']}</b> a <b>{target_season['season_name']}</b>...</blockquote>",
-            parse_mode=ParseMode.HTML
-        )
-        
-        # Migrar episodios
-        migrated_count = 0
-        for episode in source_episodes:
-            # Copia del episodio con la temporada actualizada
-            new_episode = episode.copy()
-            new_episode['season_id'] = target_season_id
-            
-            # Eliminar el campo _id para evitar conflictos
-            if '_id' in new_episode:
-                del new_episode['_id']
-            
-            # Insertar en destino
-            db.db.season_episodes.insert_one(new_episode)
-            migrated_count += 1
-        
-        await status_message.edit_text(
-            f"<blockquote>✅ Migración completada.\n\n"
-            f"- {migrated_count} episodios migrados de <b>{source_season['season_name']}</b> a <b>{target_season['season_name']}</b>\n"
-            f"- Los episodios originales se mantienen en la temporada de origen.\n"
-            f"- Usa /diagnosemulti [series_id] para verificar el resultado.</blockquote>",
-            parse_mode=ParseMode.HTML
-        )
-        
-    except Exception as e:
-        logger.error(f"Error en proceso de migración: {e}")
-        await status_message.edit_text(
-            f"<blockquote>❌ Error durante la migración: {str(e)[:100]}</blockquote>",
-            parse_mode=ParseMode.HTML
-        )
-
 async def handle_multi_series_request(update: Update, context: ContextTypes.DEFAULT_TYPE, series_id: int) -> None:
     """Manejar la solicitud de visualización de una serie con múltiples temporadas"""
     try:
@@ -2367,206 +2093,6 @@ async def handle_multi_series_request(update: Update, context: ContextTypes.DEFA
             parse_mode=ParseMode.HTML
         )
         
-async def diagnose_multi_series(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Comando para administradores para diagnosticar problemas con series multi-temporada"""
-    # Verificar que el usuario es administrador
-    if not is_admin(user.id):
-            return
-    
-    # Verificar si se proporcionó un ID de serie
-    if not context.args:
-        await update.message.reply_text(
-            "Uso: /diagnosemulti series_id\n"
-            "Ejemplo: /diagnosemulti 1746123924",
-            parse_mode=ParseMode.HTML
-        )
-        return
-    
-    try:
-        # Obtener el ID de la serie
-        series_id = int(context.args[0])
-        
-        # Enviar mensaje de estado
-        status_message = await update.message.reply_text(
-            f"<blockquote>⏳ Diagnosticando serie ID {series_id}...</blockquote>",
-            parse_mode=ParseMode.HTML
-        )
-        
-        # Obtener datos de la serie
-        series = db.get_multi_series(series_id)
-        
-        if not series:
-            await status_message.edit_text(
-                f"<blockquote>❌ Serie ID {series_id} no encontrada en la base de datos.</blockquote>",
-                parse_mode=ParseMode.HTML
-            )
-            return
-        
-        # Hacer la consulta directa a la colección de temporadas
-        all_seasons = list(db.db.seasons.find({'series_id': series_id}))
-        
-        # Generar informe
-        report = f"<blockquote>📊 <b>Diagnóstico de Serie ID {series_id}</b>\n\n"
-        report += f"<b>Título:</b> {series['title']}\n"
-        report += f"<b>Temporadas en DB:</b> {len(all_seasons)}\n\n"
-        
-        if all_seasons:
-            report += "<b>Detalle de temporadas:</b>\n"
-            for idx, season in enumerate(all_seasons):
-                season_id = season['season_id']
-                season_name = season['season_name']
-                
-                # Contar episodios de esta temporada
-                episodes = list(db.db.season_episodes.find({'season_id': season_id}))
-                report += f"{idx+1}. <b>{season_name}</b> (ID: {season_id}): {len(episodes)} capítulos\n"
-                
-                # Si hay episodios, mostrar algunos detalles
-                if episodes:
-                    report += f"   - Primer capítulo: #{episodes[0]['episode_number']} (ID: {episodes[0]['message_id']})\n"
-                    report += f"   - Último capítulo: #{episodes[-1]['episode_number']} (ID: {episodes[-1]['message_id']})\n"
-        
-        report += "</blockquote>"
-        
-        # Mostrar el informe
-        await status_message.edit_text(report, parse_mode=ParseMode.HTML)
-        
-    except ValueError:
-        await update.message.reply_text(
-            "❌ El ID de serie debe ser un número entero.",
-            parse_mode=ParseMode.HTML
-        )
-    except Exception as e:
-        logger.error(f"Error en diagnose_multi_series: {e}")
-        await update.message.reply_text(
-            f"❌ Error durante el diagnóstico: {str(e)[:100]}",
-            parse_mode=ParseMode.HTML
-        )        
-        
-async def verify_multi_series_data(context, series_id):
-    """Verifica y corrige posibles inconsistencias en los datos de una serie multi-temporada"""
-    try:
-        # Obtener todas las temporadas
-        seasons = db.get_seasons(series_id)
-        
-        if not seasons:
-            return False, "No se encontraron temporadas para esta serie"
-        
-        inconsistencies = []
-        
-        for season in seasons:
-            # Verificar si la temporada tiene episodios
-            episodes = db.get_season_episodes(season['season_id'])
-            
-            if not episodes:
-                # Temporada sin episodios - eliminar la temporada
-                db.db.seasons.delete_one({'season_id': season['season_id']})
-                inconsistencies.append(f"Temporada eliminada: {season['season_name']} (sin capítulos)")
-                continue
-            
-            # Verificar si todos los episodios existen en el canal
-            for episode in episodes:
-                try:
-                    # Intentar obtener el mensaje para verificar que existe
-                    await context.bot.forward_message(
-                        chat_id=context.bot.id,  # Enviar al propio bot
-                        from_chat_id=SEARCH_CHANNEL_ID,
-                        message_id=episode['message_id'],
-                        disable_notification=True
-                    )
-                    
-                    # Eliminar el mensaje reenviado para no llenar el chat
-                    await context.bot.delete_message(
-                        chat_id=context.bot.id,
-                        message_id=context.bot.message_id
-                    )
-                    
-                except Exception:
-                    # El mensaje no existe, eliminar el episodio
-                    db.db.season_episodes.delete_one({'_id': episode['_id']})
-                    inconsistencies.append(f"Capítulo {episode['episode_number']} eliminado de {season['season_name']} (mensaje no encontrado)")
-        
-        if inconsistencies:
-            return True, "\n".join(inconsistencies)
-        else:
-            return True, "No se encontraron inconsistencias"
-        
-    except Exception as e:
-        logger.error(f"Error verificando datos de serie: {e}")
-        return False, f"Error durante la verificación: {str(e)[:100]}"        
-        
-async def repair_multi_series(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Comando para administradores para reparar series con múltiples temporadas"""
-    # Verificar que el usuario es administrador
-    if not is_admin(user.id):
-            return
-    
-    # Verificar si se proporcionó un ID de serie
-    if not context.args:
-        await update.message.reply_text(
-            "Uso: /repairmulti series_id\n"
-            "Ejemplo: /repairmulti 1746123924",
-            parse_mode=ParseMode.HTML
-        )
-        return
-    
-    try:
-        # Obtener el ID de la serie
-        series_id = int(context.args[0])
-        
-        # Verificar si la serie existe
-        series = db.get_multi_series(series_id)
-        
-        if not series:
-            await update.message.reply_text(
-                "❌ Serie no encontrada. Verifica el ID e intenta nuevamente.",
-                parse_mode=ParseMode.HTML
-            )
-            return
-        
-        # Enviar mensaje de estado
-        status_message = await update.message.reply_text(
-            f"<blockquote>⏳ Verificando y reparando la serie <b>{series['title']}</b>...</blockquote>",
-            parse_mode=ParseMode.HTML
-        )
-        
-        # Verificar y reparar la serie
-        success, report = await verify_multi_series_data(context, series_id)
-        
-        if success:
-            # Obtener estadísticas actualizadas
-            seasons = db.get_seasons(series_id)
-            total_episodes = 0
-            
-            for season in seasons:
-                episodes = db.get_season_episodes(season['season_id'])
-                total_episodes += len(episodes)
-            
-            await status_message.edit_text(
-                f"<blockquote>✅ Reparación finalizada para la serie <b>{series['title']}</b>\n\n"
-                f"📊 Estadísticas actuales:\n"
-                f"- Temporadas: {len(seasons)}\n"
-                f"- Total de capítulos: {total_episodes}\n\n"
-                f"📝 Reporte de reparación:\n{report}</blockquote>",
-                parse_mode=ParseMode.HTML
-            )
-        else:
-            await status_message.edit_text(
-                f"<blockquote>❌ Error en la reparación: {report}</blockquote>",
-                parse_mode=ParseMode.HTML
-            )
-    
-    except ValueError:
-        await update.message.reply_text(
-            "❌ El ID de serie debe ser un número entero.",
-            parse_mode=ParseMode.HTML
-        )
-    except Exception as e:
-        logger.error(f"Error en repair_multi_series: {e}")
-        await update.message.reply_text(
-            f"❌ Error desconocido: {str(e)[:100]}",
-            parse_mode=ParseMode.HTML
-        )       
-
 async def handle_season_selection(query, context, season_id):
     """Manejar la selección de una temporada"""
     user_id = query.from_user.id
@@ -2862,8 +2388,13 @@ async def send_all_multi_episodes(query, context, season_id):
 async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Comando para administradores para añadir contenido sin búsqueda en IMDb"""
     # Verificar que el usuario es administrador
+    user = update.effective_user
+    if not user:
+        return
+    
+    # Verificar que el usuario es administrador
     if not is_admin(user.id):
-            return
+        return
     
     # Obtener el estado actual
     add_state = context.user_data.get('add_state', ADD_STATE_IDLE)
@@ -2926,8 +2457,13 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 async def cancel_add_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Cancelar el proceso de añadir contenido"""
     # Verificar que el usuario es administrador
+    user = update.effective_user
+    if not user:
+        return
+    
+    # Verificar que el usuario es administrador
     if not is_admin(user.id):
-            return
+        return
     
     # Reiniciar el estado
     context.user_data['add_state'] = ADD_STATE_IDLE
@@ -2946,8 +2482,13 @@ async def cancel_add_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def handle_add_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manejar recepción del nombre del contenido en el proceso de /add"""
     # Verificar que el usuario es administrador
+    user = update.effective_user
+    if not user:
+        return
+    
+    # Verificar que el usuario es administrador
     if not is_admin(user.id):
-            return
+        return
     
     # Verificar si estamos esperando el nombre del contenido
     add_state = context.user_data.get('add_state', ADD_STATE_IDLE)
@@ -3014,8 +2555,13 @@ async def handle_add_name(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def handle_add_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manejar la recepción de capítulos durante el proceso de /add"""
     # Verificar que el usuario es administrador
+    user = update.effective_user
+    if not user:
+        return
+    
+    # Verificar que el usuario es administrador
     if not is_admin(user.id):
-            return
+        return
     
     # Verificar si estamos en modo de añadir contenido
     add_state = context.user_data.get('add_state', ADD_STATE_IDLE)
@@ -7124,14 +6670,9 @@ def main() -> None:
     application.add_handler(CommandHandler("plan", set_user_plan))
     application.add_handler(CommandHandler("a", a_command))
     application.add_handler(CommandHandler("cancelmulti", cancel_multi_command))
-    application.add_handler(CommandHandler("repairmulti", repair_multi_series))
     application.add_handler(CommandHandler("load", load_command))
     application.add_handler(CommandHandler("cancelmulti", cancel_multi_command))
     application.add_handler(CommandHandler("upser", upser_command))
-    application.add_handler(CommandHandler("diagnosemulti", diagnose_multi_series))
-    application.add_handler(CommandHandler("fixseasons", fix_seasons))
-    application.add_handler(CommandHandler("migrateepisodes", migrate_episodes))
-    application.add_handler(CommandHandler("confirmmigrate", confirm_migrate))
     application.add_handler(CommandHandler("cancelupser", cancel_upser_command))
     application.add_handler(CommandHandler("add", add_command))
     application.add_handler(CommandHandler("canceladd", cancel_add_command))
