@@ -3016,18 +3016,17 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
         # Procesar el contenido pendiente
         await finalize_current_content(update, context)
     
-    # Ahora procesamos el nuevo nombre
     # Crear un mensaje de estado para este proceso específico
     status_msg = await update.message.reply_text(
-        f"<blockquote>🔍 Buscando información para: <b>{content_name}</b>...</blockquote>",
+        f"<blockquote>🔍 Buscando información en TMDB para: <b>{content_name}</b>...</blockquote>",
         parse_mode=ParseMode.HTML
     )
     
     try:
-        # Buscar información en TMDB
+        # Buscar información solo en TMDB/IMDb
         imdb_info = await search_imdb_info(content_name)
         
-        # Inicializar el contenido actual
+        # Inicializar el contenido actual sin buscar en canales
         current_content = {
             'name': content_name,
             'imdb_info': imdb_info or {},
@@ -3041,21 +3040,21 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
         context.bot_data['current_content'] = current_content
         
         if not imdb_info:
-            # No se encontró información
+            # No se encontró información en TMDB
             await status_msg.edit_text(
                 f"<blockquote>⚠️ No se encontró información en TMDB para <b>{content_name}</b>.\n"
                 f"Continuaremos con información básica.\n"
-                f"Los archivos que envíes se renombrarán como <b>{content_name}</b>.\n"
+                f"Los archivos se renombrarán como <b>{content_name}</b>.\n"
                 f"Ahora envía los archivos del contenido.</blockquote>",
                 parse_mode=ParseMode.HTML
             )
         else:
-            # Se encontró información, descargar póster si está disponible
+            # Se encontró información en TMDB
             await status_msg.edit_text(
                 f"<blockquote>✅ Información encontrada: <b>{imdb_info['title']} ({imdb_info['year']})</b>\n"
                 f"⭐ Calificación: {imdb_info['rating']}/10\n"
                 f"🔍 Buscando póster de alta calidad...\n"
-                f"Los archivos que envíes se renombrarán como <b>{content_name}</b>.</blockquote>",
+                f"Los archivos se renombrarán como <b>{content_name}</b>.</blockquote>",
                 parse_mode=ParseMode.HTML
             )
             
@@ -3075,7 +3074,7 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
                         f"✅ <b>{imdb_info['title']}</b> ({imdb_info['year']})\n\n"
                         f"⭐ <b>Calificación:</b> {imdb_info['rating']}/10\n"
                         f"🎭 <b>Género:</b> {imdb_info['genres']}\n\n"
-                        f"<blockquote>Ahora envía todos los archivos del contenido.\n"
+                        f"<blockquote>Ahora envía los archivos del contenido.\n"
                         f"Los archivos se renombrarán como <b>{content_name}</b>.\n"
                         f"Cuando termines, envía el nombre del siguiente contenido.</blockquote>"
                     )
@@ -3132,12 +3131,11 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
             'content_type': 'movie',
             'season_num': None,
             'title': content_name,
-            'custom_filename': content_name  # Usar el nombre exacto que el admin proporcionó
+            'custom_filename': content_name
         }
         
         # Cambiar estado a esperar archivos
         context.bot_data['load_state'] = LOAD_STATE_WAITING_FILES
-
 
 async def handle_load_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manejar la recepción de archivos durante el modo de carga masiva"""
