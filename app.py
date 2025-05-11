@@ -59,6 +59,15 @@ SEARCH_CHANNEL_ID = -1002302159104
 def is_admin(user_id: int) -> bool:
     """Verificar si un usuario es administrador"""
     return user_id in ADMIN_IDS
+    
+def clear_old_cache(self):
+    """Limpiar caché antiguo (más de 30 días)"""
+    try:
+        expiry_time = datetime.now() - timedelta(days=30)
+        self.search_cache.delete_many({"timestamp": {"$lt": expiry_time}})
+        logger.info("Limpieza de caché antiguo (>30 días) completada")
+    except Exception as e:
+        logger.error(f"Error limpiando caché antiguo: {e}")    
 
 # Add this at the top with other constants
 PLANS_INFO = PLANS
@@ -4136,15 +4145,18 @@ async def search_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     # Get user preferences
     max_results = user_preferences[user_id]["max_results"]
     
-    # Check if we have cached results for this query
-    cache_key = f"{query}_{user_id}"
-    if cache_key in search_cache:
-        cache_time, results = search_cache[cache_key]
-        # Check if cache is still valid
-        if (datetime.now() - cache_time).total_seconds() < CACHE_EXPIRATION:
-            # Use cached results
-            await send_search_results(update, context, query, results)
-            return
+    # Check if we have cached results in MongoDB
+    cached_results = db.get_search_cache(query)
+    if cached_results:
+        # Usar resultados en caché
+        await send_search_results(
+            update, 
+            context, 
+            query, 
+            cached_results["results"],
+            footer_text="\n\n<i>📌 Resultados almacenados en caché para búsquedas más rápidas</i>"
+        )
+        return
     
     # Send initial message
     status_message = await update.message.reply_text(
@@ -4316,8 +4328,16 @@ async def search_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         # Limit to max results
         potential_matches = potential_matches[:max_results]
         
-        # Cache the results
-        search_cache[cache_key] = (datetime.now(), potential_matches)
+        # Cuando encuentres resultados, guárdalos en el caché de MongoDB
+        if potential_matches:
+            cache_data = {
+                "query": query,
+                "results": potential_matches,
+                "timestamp": datetime.now(),
+                "cache_version": "1.0",
+                "result_count": len(potential_matches)
+            }
+            db.save_search_cache(query, cache_data)
         
         # Send results to user
         await send_search_results(update, context, query, potential_matches, status_message)
@@ -4473,7 +4493,7 @@ async def get_message_content(context: ContextTypes.DEFAULT_TYPE, user_chat_id: 
         logger.error(f"Error processing message {msg_id}: {e}")
         return None
 
-async def send_search_results(update: Update, context: ContextTypes.DEFAULT_TYPE, query: str, results: list, status_message=None):
+async def send_search_results(update: Update, context: ContextTypes.DEFAULT_TYPE, query: str, results: list, status_message=None, footer_text=None):
     """Send search results to the user."""
     if not status_message:
         status_message = await update.message.reply_text(
@@ -4494,12 +4514,21 @@ async def send_search_results(update: Update, context: ContextTypes.DEFAULT_TYPE
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await status_message.edit_text(
+        # Crear mensaje base
+        message_text = (
             f"✅ Encontré {len(results)} resultados para '<b>{query}</b>'.\n\n"
-    		f"Selecciona uno para verlo:",
-    		reply_markup=reply_markup,
-    		parse_mode=ParseMode.HTML
-		)
+            f"Selecciona uno para verlo:"
+        )
+        
+        # Añadir footer si existe
+        if footer_text:
+            message_text += footer_text
+        
+        await status_message.edit_text(
+            message_text,
+            reply_markup=reply_markup,
+            parse_mode=ParseMode.HTML
+        )
     else:
         # Content not found, offer to make a request
         keyboard = [
@@ -4518,6 +4547,26 @@ async def send_search_results(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"¿Quieres hacer un pedido?\n"
             f"Selecciona el tipo y haz clic en 'Hacer pedido'.",
             reply_markup=reply_markup
+        )
+
+async def clear_cache_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin command to manually clear the search cache"""
+    user = update.effective_user
+    
+    # Verificar que el usuario es administrador
+    if not is_admin(user.id):
+        return
+        
+    try:
+        db.clear_old_cache()
+        await update.message.reply_text(
+            "<blockquote>✅ Caché limpiado correctamente.</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+    except Exception as e:
+        await update.message.reply_text(
+            f"<blockquote>❌ Error al limpiar caché: {str(e)[:100]}</blockquote>",
+            parse_mode=ParseMode.HTML
         )
 
 async def send_additional_messages(context, chat_id, msg_id, can_forward):
@@ -6694,6 +6743,7 @@ def main() -> None:
     application.add_handler(CommandHandler("admin_help", admin_help))
     application.add_handler(CommandHandler("stats", stats))
     application.add_handler(CommandHandler("broadcast", broadcast))
+    application.add_handler(CommandHandler("clearcache", clear_cache_command))
 
     # Handlers para el nuevo comando ser
     application.add_handler(CommandHandler("ser", ser_command))
