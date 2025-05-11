@@ -51,14 +51,14 @@ def keep_alive():
 
 # Constantes del bot
 TOKEN = "7853962859:AAFxRdG9lqc8PKC9J7rtFlkQIVnB3iYlGQk"
-ADMIN_IDS = [1742433244, 7588449861, 6866175814]  # Lista de IDs de administradores
+ADMIN_IDS = [1742433244, 7588449861, 6866175814]  # Lista de IDS de administradores
 CHANNEL_ID = -1002584219284
 GROUP_ID = -1002585538833
 SEARCH_CHANNEL_ID = -1002302159104
 
-def is_admin(user_ids: int) -> bool:
+def is_admin(user_IDS: int) -> bool:
     """Verificar si un usuario es administrador"""
-    return user_ids in ADMIN_IDSS
+    return user_IDS in ADMIN_IDS
 
 # Add this at the top with other constants
 PLANS_INFO = PLANS
@@ -167,10 +167,10 @@ def truncate_description(description: str, max_length: int = 1000) -> str:
     return truncated
 
 # Función para verificar membresía al canal
-async def is_channel_member(user_ids, context):
+async def is_channel_member(user_IDS, context):
     """Verifica si un usuario es miembro del canal principal."""
     try:
-        member = await context.bot.get_chat_member(chat_id=CHANNEL_ID, user_ids=user_ids)
+        member = await context.bot.get_chat_member(chat_id=CHANNEL_ID, user_IDS=user_IDS)
         return member.status in ['member', 'administrator', 'creator']
     except TelegramError as e:
         logger.error(f"Error verificando membresía: {e}")
@@ -182,11 +182,11 @@ def check_channel_membership(func):
     @wraps(func)
     async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE, *args, **kwargs):
         if update.effective_chat.type == 'private':  # Solo verificar en chats privados
-            user_ids = update.effective_user.id
+            user_IDS = update.effective_user.id
             
             # Verificar si el usuario ya está marcado como verificado recientemente (caché)
             verification_cache = context.bot_data.setdefault('verification_cache', {})
-            cached_until = verification_cache.get(user_ids)
+            cached_until = verification_cache.get(user_IDS)
             
             current_time = datetime.now()
             if cached_until and current_time < cached_until:
@@ -194,7 +194,7 @@ def check_channel_membership(func):
                 return await func(update, context, *args, **kwargs)
             
             # Verificar membresía
-            is_member = await is_channel_member(user_ids, context)
+            is_member = await is_channel_member(user_IDS, context)
             
             if not is_member:
                 # Usuario no es miembro, mostrar mensaje de suscripción
@@ -214,7 +214,7 @@ def check_channel_membership(func):
             
             # Si llega aquí, el usuario es miembro, lo guardamos en caché para reducir verificaciones
             # Caché por 30 minutos
-            verification_cache[user_ids] = current_time + timedelta(minutes=30)
+            verification_cache[user_IDS] = current_time + timedelta(minutes=30)
             
         # Si es un chat grupal o el usuario es miembro, ejecutar la función original
         return await func(update, context, *args, **kwargs)
@@ -403,11 +403,11 @@ async def send_content_message(chat_id, context, msg_id):
         
 async def handle_series_request(update: Update, context: ContextTypes.DEFAULT_TYPE, series_id: int) -> None:
     """Manejar la solicitud de visualización de una serie"""
-    user_ids = update.effective_user.id
-    user_data = db.get_user(user_ids)
+    user_IDS = update.effective_user.id
+    user_data = db.get_user(user_IDS)
     
     # Verificar límites de búsqueda
-    if not db.increment_daily_usage(user_ids):
+    if not db.increment_daily_usage(user_IDS):
         # Mostrar mensaje de límite excedido y opciones de planes
         keyboard = []
         for plan_id, plan in PLANS_INFO.items():
@@ -536,7 +536,7 @@ async def ser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                     'total_episodes': 0,  # Contador total de episodios
                     'start_time': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                     'processed_seasons': set(),  # Para rastrear temporadas procesadas
-                    'series_id': None  # Para mantener consistencia en los IDs
+                    'series_id': None  # Para mantener consistencia en los IDS
                 }
 
                 help_text = (
@@ -1140,8 +1140,8 @@ async def finalize_multi_series_upload(update, context, status_message=None):
 
 async def send_episode(query, context, series_id, episode_number):
     """Enviar un capítulo específico al usuario"""
-    user_ids = query.from_user.id
-    user_data = db.get_user(user_ids)
+    user_IDS = query.from_user.id
+    user_data = db.get_user(user_IDS)
     can_forward = user_data and user_data.get('can_forward', False)
     
     await query.answer("Procesando tu solicitud...")
@@ -1523,7 +1523,7 @@ async def handle_multi_seasons_input(update: Update, context: ContextTypes.DEFAU
     user = update.effective_user
     
     # Verificar que el usuario es administrador
-    if user.id not in ADMIN_IDSS:
+    if user.id not in ADMIN_IDS:
         return
     
     # Verificar si estamos en modo de carga de series multi-temporada
@@ -2041,17 +2041,17 @@ async def fix_seasons(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 parse_mode=ParseMode.HTML
             )
             
-            # Crear episodios ficticios con IDs secuenciales
+            # Crear episodios ficticios con IDS secuenciales
             for i in range(1, episode_count + 1):
                 # Buscar mensajes existentes en el canal que coincidan con este capítulo
                 search_term = f"{season_name.lower()} capítulo {i}"
                 
                 # Aquí normalmente buscaríamos en el canal, pero como no tenemos acceso directo,
-                # usamos IDs secuenciales ficticios como ejemplo
-                # En un caso real, necesitarías identificar los IDs correctos de los mensajes
+                # usamos IDS secuenciales ficticios como ejemplo
+                # En un caso real, necesitarías identificar los IDS correctos de los mensajes
                 
                 # Ejemplo de ID ficticio: usar el ID de la temporada + número de episodio
-                # Esto es solo ilustrativo - en un caso real deberíamos buscar los IDs correctos
+                # Esto es solo ilustrativo - en un caso real deberíamos buscar los IDS correctos
                 fake_message_id = int(f"{season_id}{i:02d}")
                 
                 # Guardar el episodio en la base de datos
@@ -2066,7 +2066,7 @@ async def fix_seasons(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
                 await status_message.edit_text(
                     f"<blockquote>✅ Temporada <b>{season_name}</b> {action} correctamente.\n"
                     f"Se han creado {len(possible_episodes)} episodios ficticios.\n\n"
-                    f"⚠️ IMPORTANTE: Los IDs de mensajes son ficticios, debes reemplazarlos con IDs reales usando otro comando.</blockquote>",
+                    f"⚠️ IMPORTANTE: Los IDS de mensajes son ficticios, debes reemplazarlos con IDS reales usando otro comando.</blockquote>",
                     parse_mode=ParseMode.HTML
                 )
             else:
@@ -2569,7 +2569,7 @@ async def repair_multi_series(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 async def handle_season_selection(query, context, season_id):
     """Manejar la selección de una temporada"""
-    user_ids = query.from_user.id
+    user_IDS = query.from_user.id
     
     await query.answer("Cargando capítulos...")
     
@@ -2709,8 +2709,8 @@ async def handle_back_to_seasons(query, context, series_id):
 
 async def send_multi_episode(query, context, message_id):
     """Enviar un capítulo específico de una serie multi-temporada"""
-    user_ids = query.from_user.id
-    user_data = db.get_user(user_ids)
+    user_IDS = query.from_user.id
+    user_data = db.get_user(user_IDS)
     can_forward = user_data and user_data.get('can_forward', False)
     
     await query.answer("Procesando tu solicitud...")
@@ -2762,8 +2762,8 @@ async def send_multi_episode(query, context, message_id):
 
 async def send_all_multi_episodes(query, context, season_id):
     """Enviar todos los capítulos de una temporada"""
-    user_ids = query.from_user.id
-    user_data = db.get_user(user_ids)
+    user_IDS = query.from_user.id
+    user_data = db.get_user(user_IDS)
     can_forward = user_data and user_data.get('can_forward', False)
     
     await query.answer("Enviando todos los capítulos...")
@@ -3212,7 +3212,7 @@ async def finalize_add_upload(update: Update, context: ContextTypes.DEFAULT_TYPE
             parse_mode=ParseMode.HTML
         )
         
-        search_channel_episode_ids = []
+        search_channel_episode_IDS = []
         
         # Procesar los episodios en grupos para evitar timeouts
         episode_groups = [episodes[i:i+5] for i in range(0, len(episodes), 5)]
@@ -3233,14 +3233,14 @@ async def finalize_add_upload(update: Update, context: ContextTypes.DEFAULT_TYPE
                         disable_notification=True
                     )
                     
-                    search_channel_episode_ids.append(original_message.message_id)
+                    search_channel_episode_IDS.append(original_message.message_id)
                     
                     # Pequeña pausa para evitar rate limiting
                     await asyncio.sleep(0.5)
                 except Exception as e:
                     logger.error(f"Error copiando episodio al canal de búsqueda: {e}")
                     await status_message.edit_text(
-                        f"<blockquote>⚠️ Error al subir el archivo {group_index*5 + len(search_channel_episode_ids) + 1}. Continuando con el siguiente...</blockquote>",
+                        f"<blockquote>⚠️ Error al subir el archivo {group_index*5 + len(search_channel_episode_IDS) + 1}. Continuando con el siguiente...</blockquote>",
                         parse_mode=ParseMode.HTML
                     )
                     await asyncio.sleep(1)
@@ -3250,7 +3250,7 @@ async def finalize_add_upload(update: Update, context: ContextTypes.DEFAULT_TYPE
             view_url = f"https://t.me/MultimediaTVbot?start=series_{content_id}"
         else:
             # Si es película, usar el ID del primer mensaje
-            view_url = f"https://t.me/MultimediaTVbot?start=content_{search_channel_episode_ids[0]}"
+            view_url = f"https://t.me/MultimediaTVbot?start=content_{search_channel_episode_IDS[0]}"
         
         # 6. Crear botón para la portada
         keyboard = [
@@ -3310,7 +3310,7 @@ async def finalize_add_upload(update: Update, context: ContextTypes.DEFAULT_TYPE
                 )
                 
                 # Guardar cada episodio
-                for i, (episode, msg_id) in enumerate(zip(episodes, search_channel_episode_ids)):
+                for i, (episode, msg_id) in enumerate(zip(episodes, search_channel_episode_IDS)):
                     episode_num = episode.get('episode_number', i + 1)
                     db.add_episode(
                         series_id=content_id,
@@ -3357,7 +3357,7 @@ async def load_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     user = update.effective_user
     
     # Verificar que el usuario es administrador
-    if user.id not in ADMIN_IDSS:
+    if user.id not in ADMIN_IDS:
         return
     
     # Obtener el estado actual de carga
@@ -3435,7 +3435,7 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
     user = update.effective_user
     
     # Verificar que el usuario es administrador
-    if user.id not in ADMIN_IDSS:
+    if user.id not in ADMIN_IDS:
         return
     
     # Verificar si estamos en modo de carga masiva
@@ -3587,7 +3587,7 @@ async def handle_load_content(update: Update, context: ContextTypes.DEFAULT_TYPE
     user = update.effective_user
     
     # Verificar que el usuario es administrador
-    if user.id not in ADMIN_IDSS:
+    if user.id not in ADMIN_IDS:
         return
     
     # Verificar si estamos en modo de carga masiva esperando archivos
@@ -3858,7 +3858,7 @@ async def finalize_current_content(update, context):
         search_channel_cover_id = sent_cover.message_id
         
         # 2. Subir todos los archivos al canal de búsqueda
-        search_message_ids = []
+        search_message_IDS = []
         for i, file in enumerate(current_content['files']):
             # Obtener el mensaje original
             search_message = await context.bot.copy_message(
@@ -3868,14 +3868,14 @@ async def finalize_current_content(update, context):
                 disable_notification=True
             )
             
-            search_message_ids.append(search_message.message_id)
+            search_message_IDS.append(search_message.message_id)
         
         # 3. Generar URL para botón "Ver ahora"
         if is_series:
             view_url = f"https://t.me/MultimediaTVbot?start=series_{unique_id}"
         else:
             # Si es película, usar el ID del primer mensaje
-            view_url = f"https://t.me/MultimediaTVbot?start=content_{search_message_ids[0]}"
+            view_url = f"https://t.me/MultimediaTVbot?start=content_{search_message_IDS[0]}"
         
         # 4. Crear botón para la portada
         keyboard = [
@@ -3917,7 +3917,7 @@ async def finalize_current_content(update, context):
             )
             
             # Guardar cada episodio
-            for i, (file, msg_id) in enumerate(zip(current_content['files'], search_message_ids)):
+            for i, (file, msg_id) in enumerate(zip(current_content['files'], search_message_IDS)):
                 episode_num = file.get('episode_num', i + 1)
                 db.add_episode(
                     series_id=unique_id,
@@ -4294,8 +4294,8 @@ def extract_title_from_content(caption, file_name):
                         
 async def send_all_episodes(query, context, series_id):
     """Enviar todos los capítulos de una serie al usuario"""
-    user_ids = query.from_user.id
-    user_data = db.get_user(user_ids)
+    user_IDS = query.from_user.id
+    user_data = db.get_user(user_IDS)
     can_forward = user_data and user_data.get('can_forward', False)
     
     await query.answer("Enviando todos los capítulos...")
@@ -4527,7 +4527,7 @@ async def search_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     if not update.message:
         return
         
-    user_ids = update.effective_user.id
+    user_IDS = update.effective_user.id
     
     # Get search query from command arguments
     if not context.args:
@@ -4541,7 +4541,7 @@ async def search_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     query = " ".join(context.args).lower()
     
     # Check user's search limits
-    user_data = db.get_user(user_ids)
+    user_data = db.get_user(user_IDS)
     
     if not user_data:
         await update.message.reply_text(
@@ -4551,7 +4551,7 @@ async def search_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         return
     
     # Check if user can make more searches today
-    if not db.increment_daily_usage(user_ids):
+    if not db.increment_daily_usage(user_IDS):
         # Show purchase plans if limit exceeded
         keyboard = []
         for plan_id, plan in PLANS_INFO.items():
@@ -4580,18 +4580,18 @@ async def search_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     )
     
     # Initialize user preferences if not exist
-    if user_ids not in user_preferences:
-        user_preferences[user_ids] = {
+    if user_IDS not in user_preferences:
+        user_preferences[user_IDS] = {
             "max_results": 100,
             "show_previews": True,
             "sort_by_date": True
         }
     
     # Get user preferences
-    max_results = user_preferences[user_ids]["max_results"]
+    max_results = user_preferences[user_IDS]["max_results"]
     
     # Check if we have cached results for this query
-    cache_key = f"{query}_{user_ids}"
+    cache_key = f"{query}_{user_IDS}"
     if cache_key in search_cache:
         cache_time, results = search_cache[cache_key]
         # Check if cache is still valid
@@ -4624,23 +4624,23 @@ async def search_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         # We'll search through messages more efficiently
         num_messages = min(latest_id, MAX_SEARCH_MESSAGES)
         
-        # Create a list of message IDs to check
+        # Create a list of message IDS to check
         # We'll prioritize recent messages and use a smarter search pattern
-        message_ids = []
+        message_IDS = []
         
         # First, check the most recent 100 messages
         recent_start = max(1, latest_id - 100)
-        message_ids.extend(range(latest_id, recent_start - 1, -1))
+        message_IDS.extend(range(latest_id, recent_start - 1, -1))
         
         # Then, check older messages with a larger step to cover more ground quickly
         if recent_start > 1:
             # Calculate how many more messages we can check
-            remaining = MAX_SEARCH_MESSAGES - len(message_ids)
+            remaining = MAX_SEARCH_MESSAGES - len(message_IDS)
             if remaining > 0:
                 # Determine step size based on remaining messages
                 step = max(1, (recent_start - 1) // remaining)
-                older_ids = list(range(recent_start - 1, 0, -step))[:remaining]
-                message_ids.extend(older_ids)
+                older_IDS = list(range(recent_start - 1, 0, -step))[:remaining]
+                message_IDS.extend(older_IDS)
         
         # Keep track of potential matches
         potential_matches = []
@@ -4672,10 +4672,10 @@ async def search_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         
         # Search through messages in batches to update progress
         batch_size = 20
-        total_batches = (len(message_ids) + batch_size - 1) // batch_size
+        total_batches = (len(message_IDS) + batch_size - 1) // batch_size
         
-        for batch_index in range(0, len(message_ids), batch_size):
-            batch = message_ids[batch_index:batch_index + batch_size]
+        for batch_index in range(0, len(message_IDS), batch_size):
+            batch = message_IDS[batch_index:batch_index + batch_size]
             
             # Process batch in parallel for speed
             tasks = []
@@ -4745,7 +4745,7 @@ async def search_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     continue
             
             # Update progress
-            progress = min(100, int((batch_index + len(batch)) / len(message_ids) * 100))
+            progress = min(100, int((batch_index + len(batch)) / len(message_IDS) * 100))
             if progress % 10 == 0:  # Update every 10%
                 await status_message.edit_text(
                     f"🔍 Buscando '{query}'... {progress}% completado",
@@ -4760,7 +4760,7 @@ async def search_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await asyncio.sleep(0.01)
         
         # Sort matches by relevance
-        if user_ids in user_preferences and user_preferences[user_ids]["sort_by_date"]:
+        if user_IDS in user_preferences and user_preferences[user_IDS]["sort_by_date"]:
             # Sort by message ID (date) if user prefers
             potential_matches.sort(key=lambda x: x['id'], reverse=True)
         else:
@@ -4797,7 +4797,7 @@ async def handle_search(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
         # Si el admin está en modo de carga masiva, no procesar como búsqueda
         return
         
-    user_ids = update.effective_user.id
+    user_IDS = update.effective_user.id
     query = update.message.text.lower()
     
     # Asignar el texto como argumentos para search_content
@@ -5004,8 +5004,8 @@ async def send_additional_messages(context, chat_id, msg_id, can_forward):
 
 async def handle_send_callback(query, context, msg_id):
     """Handle send content callback."""
-    user_ids = query.from_user.id
-    user_data = db.get_user(user_ids)
+    user_IDS = query.from_user.id
+    user_data = db.get_user(user_IDS)
     can_forward = user_data and user_data.get('can_forward', False)
 
     try:
@@ -5140,8 +5140,8 @@ async def handle_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    user_ids = query.from_user.id
-    user_data = db.get_user(user_ids)
+    user_IDS = query.from_user.id
+    user_data = db.get_user(user_IDS)
     
     if not user_data:
         await query.edit_message_text(
@@ -5202,7 +5202,7 @@ async def handle_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reset_text = f"{hours:02d}:{minutes:02d}"
     
     # Get referral count
-    referral_count = db.get_referral_count(user_ids)
+    referral_count = db.get_referral_count(user_IDS)
     
     # Format join date
     join_date = user_data.get('join_date', now.strftime('%Y-%m-%d %H:%M:%S'))
@@ -5221,7 +5221,7 @@ async def handle_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"👤 <b>Perfil de Usuario</b>\n\n"
         f"<blockquote>Nombre: {query.from_user.first_name}\n"
         f"Saldo: {user_data.get('balance', 0)} 💎\n"
-        f"ID: {user_ids}\n"
+        f"ID: {user_IDS}\n"
         f"Plan: {plan_name}\n"
         f"{expiration_text}"
         f"Pedidos restantes: {requests_remaining_text}\n"
@@ -5235,7 +5235,7 @@ async def handle_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Create buttons
     keyboard = [
         [InlineKeyboardButton("Compartir Enlace de referencia 🔗", 
-                             url=f"https://t.me/share/url?url=https://t.me/MultimediaTVbot?start=ref_{user_ids}&text=¡Únete%20y%20ve%20películas%20conmigo!")],
+                             url=f"https://t.me/share/url?url=https://t.me/MultimediaTVbot?start=ref_{user_IDS}&text=¡Únete%20y%20ve%20películas%20conmigo!")],
         [InlineKeyboardButton("Volver 🔙", callback_data="main_menu")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -5251,8 +5251,8 @@ async def handle_plans(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     
-    user_ids = query.from_user.id
-    user_data = db.get_user(user_ids)
+    user_IDS = query.from_user.id
+    user_data = db.get_user(user_IDS)
     
     if not user_data:
         await query.edit_message_text(
@@ -5308,8 +5308,8 @@ async def handle_plan_details(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     await query.answer()
     
-    user_ids = query.from_user.id
-    user_data = db.get_user(user_ids)
+    user_IDS = query.from_user.id
+    user_data = db.get_user(user_IDS)
     callback_data = query.data
     
     if not user_data:
@@ -5511,8 +5511,8 @@ async def handle_make_request(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     await query.answer()
     
-    user_ids = query.from_user.id
-    user_data = db.get_user(user_ids)
+    user_IDS = query.from_user.id
+    user_data = db.get_user(user_IDS)
     
     if not user_data:
         await query.edit_message_text(
@@ -5522,7 +5522,7 @@ async def handle_make_request(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
     
     # Check if user has requests left
-    requests_left = db.get_requests_left(user_ids)
+    requests_left = db.get_requests_left(user_IDS)
     if requests_left <= 0:
         await query.edit_message_text(
             "Has alcanzado el límite de pedidos diarios para tu plan.\n"
@@ -5550,12 +5550,12 @@ async def handle_make_request(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
     
     # Update user's request count
-    db.update_request_count(user_ids)
+    db.update_request_count(user_IDS)
     
     # Send request to admin
     try:
         keyboard = [
-            [InlineKeyboardButton("Aceptar ✅", callback_data=f"accept_req_{user_ids}_{content_name}")]
+            [InlineKeyboardButton("Aceptar ✅", callback_data=f"accept_req_{user_IDS}_{content_name}")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -5563,7 +5563,7 @@ async def handle_make_request(update: Update, context: ContextTypes.DEFAULT_TYPE
             chat_id=ADMIN_IDS,
             text=f"<blockquote>📩 <b>Nuevo Pedido</b>\n\n</blockquote>"
                  f"Usuario: {query.from_user.first_name} (@{query.from_user.username})\n"
-                 f"ID: {user_ids}\n"
+                 f"ID: {user_IDS}\n"
                  f"Tipo: {'Película' if req_type == 'movie' else 'Serie'}\n"
                  f"Nombre: {content_name}",
             reply_markup=reply_markup,
@@ -5595,12 +5595,12 @@ async def handle_accept_request(update: Update, context: ContextTypes.DEFAULT_TY
     
     # Parse callback data
     try:
-        _, req_type, user_ids, content_name = query.data.split('_', 3)
-        user_ids = int(user_ids)
+        _, req_type, user_IDS, content_name = query.data.split('_', 3)
+        user_IDS = int(user_IDS)
         
         # Notify user that request was accepted
         await context.bot.send_message(
-            chat_id=user_ids,
+            chat_id=user_IDS,
             text=f"✅ ¡Buenas noticias! Tu solicitud para '<b>{content_name}</b>' ha sido aceptada.\n"
                  f"<blockquote>El contenido estará disponible pronto en el bot. Podrás buscarlo usando /search.</blockquote>",
             parse_mode=ParseMode.HTML
@@ -5626,7 +5626,7 @@ async def set_user_plan(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     
     # Check if user is admin
-    if user.id not in ADMIN_IDSS:
+    if user.id not in ADMIN_IDS:
         return
     
     # Check arguments
@@ -5649,22 +5649,22 @@ async def set_user_plan(update: Update, context: ContextTypes.DEFAULT_TYPE):
         plan_map = {1: 'pro', 2: 'plus', 3: 'ultra'}
         plan_type = plan_map[plan_number]
         
-        # Get user_ids from username
-        user_ids = db.get_user_ids_by_username(username)
-        if not user_ids:
+        # Get user_IDS from username
+        user_IDS = db.get_user_IDS_by_username(username)
+        if not user_IDS:
             await update.message.reply_text(f"Usuario @{username} no encontrado en la base de datos.",
                                           parse_mode=ParseMode.HTML)
             return
         
         # Update user's plan
         expiry_date = datetime.now() + timedelta(days=30)
-        db.update_plan(user_ids, plan_type, expiry_date)
+        db.update_plan(user_IDS, plan_type, expiry_date)
         
         # Notify user about plan change
         plan_name = PLANS_INFO[plan_type]['name']
         try:
             await context.bot.send_message(
-                chat_id=user_ids,
+                chat_id=user_IDS,
                 text=f"🎉 ¡Felicidades! Tu plan ha sido actualizado a <b>{plan_name}</b>.\n"
                      f"<blockquote>Expira el: {expiry_date.strftime('%d/%m/%Y')}\n"
                      f"Disfruta de todos los beneficios de tu nuevo plan.</blockquote>",
@@ -5714,7 +5714,7 @@ async def add_gift_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     
     # Check if user is admin
-    if user.id not in ADMIN_IDSS:
+    if user.id not in ADMIN_IDS:
         return
     
     # Check arguments
@@ -5762,7 +5762,7 @@ async def add_gift_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def redeem_gift_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Command to redeem a gift code"""
-    user_ids = update.effective_user.id
+    user_IDS = update.effective_user.id
     
     # Check arguments
     if not context.args:
@@ -5789,7 +5789,7 @@ async def redeem_gift_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Update user's plan
         plan_type = gift_code_data['plan_type']
         expiry_date = datetime.now() + timedelta(days=30)
-        db.update_plan(user_ids, plan_type, expiry_date)
+        db.update_plan(user_IDS, plan_type, expiry_date)
         
         # Update gift code usage
         db.update_gift_code_usage(code)
@@ -5815,13 +5815,13 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     
     # Check if user is admin
-    if user.id not in ADMIN_IDSS:
+    if user.id not in ADMIN_IDS:
         return
     
     # Check arguments
     if not context.args:
         await update.message.reply_text(
-            "Uso: /ban @username o /ban user_ids",
+            "Uso: /ban @username o /ban user_IDS",
             parse_mode=ParseMode.HTML
         )
         return
@@ -5829,40 +5829,40 @@ async def ban_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     target = context.args[0]
     
     try:
-        # Check if target is username or user_ids
+        # Check if target is username or user_IDS
         if target.startswith('@'):
             username = target.replace('@', '')
-            user_ids = db.get_user_ids_by_username(username)
-            if not user_ids:
+            user_IDS = db.get_user_IDS_by_username(username)
+            if not user_IDS:
                 await update.message.reply_text(f"Usuario {target} no encontrado.",
                                               parse_mode=ParseMode.HTML)
                 return
         else:
             try:
-                user_ids = int(target)
-                if not db.user_exists(user_ids):
-                    await update.message.reply_text(f"Usuario con ID {user_ids} no encontrado.",
+                user_IDS = int(target)
+                if not db.user_exists(user_IDS):
+                    await update.message.reply_text(f"Usuario con ID {user_IDS} no encontrado.",
                                                   parse_mode=ParseMode.HTML)
                     return
             except ValueError:
-                await update.message.reply_text("Formato inválido. Usa /ban @username o /ban user_ids",
+                await update.message.reply_text("Formato inválido. Usa /ban @username o /ban user_IDS",
                                               parse_mode=ParseMode.HTML)
                 return
         
         # Ban user
-        db.ban_user(user_ids)
+        db.ban_user(user_IDS)
         
         # Notify user
         try:
             await context.bot.send_message(
-                chat_id=user_ids,
+                chat_id=user_IDS,
                 text="⛔ Has sido baneado del bot MultimediaTv. Si crees que es un error, contacta al administrador.",
                 parse_mode=ParseMode.HTML
             )
         except Exception as e:
             logger.error(f"Error notifying banned user: {e}")
         
-        await update.message.reply_text(f"Usuario con ID {user_ids} ha sido baneado.",
+        await update.message.reply_text(f"Usuario con ID {user_IDS} ha sido baneado.",
                                       parse_mode=ParseMode.HTML)
     except Exception as e:
         logger.error(f"Error banning user: {e}")
@@ -5876,7 +5876,7 @@ async def upload_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     
     # Check if user is admin
-    if user.id not in ADMIN_IDSS:
+    if user.id not in ADMIN_IDS:
         return
     
     # Check if message is a reply to a media message
@@ -5895,7 +5895,7 @@ async def upload_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         # Resultados para informar al admin
         results = []
-        content_ids = []
+        content_IDS = []
         
         # 1. Verificar acceso a los canales
         try:
@@ -5917,7 +5917,7 @@ async def upload_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 message_id=original_message.message_id
             )
             
-            content_ids.append(search_msg.message_id)
+            content_IDS.append(search_msg.message_id)
             results.append(f"✅ Canal de búsqueda: Enviado (ID: #{search_msg.message_id})")
             
             # Generar URL y botón para el canal de búsqueda
@@ -5950,12 +5950,12 @@ async def upload_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 message_id=original_message.message_id
             )
             
-            content_ids.append(channel_msg.message_id)
+            content_IDS.append(channel_msg.message_id)
             results.append(f"✅ Canal principal: Enviado (ID: #{channel_msg.message_id})")
             
             # Usar el mismo botón para el canal principal si se envió correctamente al canal de búsqueda
-            if len(content_ids) > 0:
-                share_url = f"https://t.me/MultimediaTVbot?start=content_{content_ids[0]}"
+            if len(content_IDS) > 0:
+                share_url = f"https://t.me/MultimediaTVbot?start=content_{content_IDS[0]}"
                 keyboard = [
                     [InlineKeyboardButton("Ver", url=share_url)]
                 ]
@@ -5979,9 +5979,9 @@ async def upload_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # 4. Informar al administrador del resultado
         result_text = "📤 <b>Resultado de la subida:</b>\n\n" + "\n".join(results)
         
-        if len(content_ids) > 0:
-            result_text += "\n\n✅ Contenido subido a " + str(len(content_ids)) + " canal(es)"
-            if len(content_ids) == 2:
+        if len(content_IDS) > 0:
+            result_text += "\n\n✅ Contenido subido a " + str(len(content_IDS)) + " canal(es)"
+            if len(content_IDS) == 2:
                 result_text += "\n\nEl botón 'Ver' utilizará el ID del canal de búsqueda en ambos mensajes."
         else:
             result_text += "\n\n❌ Error: No se pudo subir el contenido a ningún canal"
@@ -5997,7 +5997,7 @@ async def upload_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def request_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Command to request a specific movie or series"""
-    user_ids = update.effective_user.id
+    user_IDS = update.effective_user.id
     
     # Check arguments
     if len(context.args) < 2:
@@ -6009,7 +6009,7 @@ async def request_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     # Check if user is banned
-    if db.is_user_banned(user_ids):
+    if db.is_user_banned(user_IDS):
         await update.message.reply_text(
             "No puedes realizar pedidos porque has sido baneado del bot.",
             parse_mode=ParseMode.HTML
@@ -6017,7 +6017,7 @@ async def request_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     # Check if user has requests left
-    requests_left = db.get_requests_left(user_ids)
+    requests_left = db.get_requests_left(user_IDS)
     if requests_left <= 0:
         await update.message.reply_text(
             "Has alcanzado el límite de pedidos diarios para tu plan.\n"
@@ -6030,12 +6030,12 @@ async def request_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     content_name = " ".join(context.args[1:])
     
     # Update user's request count
-    db.update_request_count(user_ids)
+    db.update_request_count(user_IDS)
     
     # Send request to admin
     try:
         keyboard = [
-            [InlineKeyboardButton("Aceptar ✅", callback_data=f"accept_req_{user_ids}_{content_name}")]
+            [InlineKeyboardButton("Aceptar ✅", callback_data=f"accept_req_{user_IDS}_{content_name}")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -6043,7 +6043,7 @@ async def request_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
             chat_id=ADMIN_IDS,
             text=f"<blockquote>📩 <b>Nuevo Pedido</b>\n\</blockquote>n"
                  f"Usuario: {update.effective_user.first_name} (@{update.effective_user.username})\n"
-                 f"ID: {user_ids}\n"
+                 f"ID: {user_IDS}\n"
                  f"Año: {year}\n"
                  f"Nombre: {content_name}",
             reply_markup=reply_markup,
@@ -6069,7 +6069,7 @@ async def admin_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     
     # Check if user is admin
-    if user.id not in ADMIN_IDSS:
+    if user.id not in ADMIN_IDS:
         return
     
     help_text = (
@@ -6098,7 +6098,7 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     
     # Check if user is admin
-    if user.id not in ADMIN_IDSS:
+    if user.id not in ADMIN_IDS:
         return
     
     try:
@@ -6137,7 +6137,7 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     
     # Check if user is admin
-    if user.id not in ADMIN_IDSS:
+    if user.id not in ADMIN_IDS:
         return
     
     # Check arguments
@@ -6150,21 +6150,21 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     message = " ".join(context.args)
     
-    # Get all user IDs
-    user_idss = db.get_all_user_idss()
+    # Get all user IDS
+    user_IDS = db.get_all_user_IDS()
     
     sent_count = 0
     failed_count = 0
     
     await update.message.reply_text(
-        f"Iniciando difusión a {len(user_idss)} usuarios...",
+        f"Iniciando difusión a {len(user_IDS)} usuarios...",
         parse_mode=ParseMode.HTML
     )
     
-    for user_ids in user_idss:
+    for user_IDS in user_IDS:
         try:
             await context.bot.send_message(
-                chat_id=user_ids,
+                chat_id=user_IDS,
                 text=f"<blockquote>📢 <b>Anuncio Oficial</b>\n\n</blockquote>{message}",
                 parse_mode=ParseMode.HTML
             )
@@ -6173,7 +6173,7 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Add a small delay to avoid hitting rate limits
             await asyncio.sleep(0.05)
         except Exception as e:
-            logger.error(f"Error sending broadcast to {user_ids}: {e}")
+            logger.error(f"Error sending broadcast to {user_IDS}: {e}")
             failed_count += 1
     
     await update.message.reply_text(
@@ -6188,7 +6188,7 @@ async def upser_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     user = update.effective_user
     
     # Verificar que el usuario es administrador
-    if user.id not in ADMIN_IDSS:
+    if user.id not in ADMIN_IDS:
         return
     
     # Obtener el estado actual
@@ -6363,7 +6363,7 @@ async def cancel_upser_command(update: Update, context: ContextTypes.DEFAULT_TYP
     user = update.effective_user
     
     # Verificar que el usuario es administrador
-    if user.id not in ADMIN_IDSS:
+    if user.id not in ADMIN_IDS:
         return
     
     # Reiniciar el estado
@@ -6388,7 +6388,7 @@ async def handle_upser_input(update: Update, context: ContextTypes.DEFAULT_TYPE)
     user = update.effective_user
     
     # Verificar que el usuario es administrador
-    if user.id not in ADMIN_IDSS:
+    if user.id not in ADMIN_IDS:
         return
     
     # Verificar si estamos en modo de carga de series
@@ -6667,7 +6667,7 @@ async def finalize_series_upload(update: Update, context: ContextTypes.DEFAULT_T
             parse_mode=ParseMode.HTML
         )
         
-        search_channel_episode_ids = []
+        search_channel_episode_IDS = []
         
         # Procesar los capítulos en grupos más pequeños
         episode_groups = [episodes[i:i+5] for i in range(0, len(episodes), 5)]
@@ -6689,7 +6689,7 @@ async def finalize_series_upload(update: Update, context: ContextTypes.DEFAULT_T
                         disable_notification=True
                     )
                     
-                    search_channel_episode_ids.append(original_message.message_id)
+                    search_channel_episode_IDS.append(original_message.message_id)
                     
                     # Pequeña pausa para evitar problemas de rate limiting
                     await asyncio.sleep(0.5)
@@ -6746,7 +6746,7 @@ async def finalize_series_upload(update: Update, context: ContextTypes.DEFAULT_T
             )
             
             # Guardar los capítulos en la base de datos
-            for i, episode_id in enumerate(search_channel_episode_ids):
+            for i, episode_id in enumerate(search_channel_episode_IDS):
                 try:
                     episode_number = episodes[i]['episode_number'] if 'episode_number' in episodes[i] else (i + 1)
                 except IndexError:
@@ -6758,7 +6758,7 @@ async def finalize_series_upload(update: Update, context: ContextTypes.DEFAULT_T
                     message_id=episode_id
                 )
             
-            logger.info(f"Serie guardada correctamente en la base de datos: ID={series_id}, Título={title}, Episodios={len(search_channel_episode_ids)}")
+            logger.info(f"Serie guardada correctamente en la base de datos: ID={series_id}, Título={title}, Episodios={len(search_channel_episode_IDS)}")
             
         except Exception as db_error:
             logger.error(f"Error guardando serie en la base de datos: {db_error}")
@@ -6804,16 +6804,16 @@ async def verify_channel_membership(update: Update, context: ContextTypes.DEFAUL
     await query.answer()
     
     user = query.from_user
-    user_ids = user.id
+    user_IDS = user.id
     
     # Verificar membresía en tiempo real
-    is_member = await is_channel_member(user_ids, context)
+    is_member = await is_channel_member(user_IDS, context)
     
     if is_member:
         # Asegurarse de que el usuario esté registrado
-        if not db.user_exists(user_ids):
+        if not db.user_exists(user_IDS):
             db.add_user(
-                user_ids,
+                user_IDS,
                 user.username,
                 user.first_name,
                 user.last_name
@@ -6821,7 +6821,7 @@ async def verify_channel_membership(update: Update, context: ContextTypes.DEFAUL
         
         # Actualizar caché de verificación
         verification_cache = context.bot_data.setdefault('verification_cache', {})
-        verification_cache[user_ids] = datetime.now() + timedelta(minutes=30)
+        verification_cache[user_IDS] = datetime.now() + timedelta(minutes=30)
         
         # Mostrar mensaje de éxito y redirigir al menú principal
         keyboard = [
@@ -6943,8 +6943,8 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             return
     
     # Verificar membresía antes de procesar otros callbacks
-    user_ids = query.from_user.id
-    is_member = await is_channel_member(user_ids, context)
+    user_IDS = query.from_user.id
+    is_member = await is_channel_member(user_IDS, context)
     
     if not is_member and data not in ["verify_membership"]:
         # Usuario no es miembro, mostrar mensaje de suscripción
@@ -7034,20 +7034,20 @@ async def check_plan_expiry(context: ContextTypes.DEFAULT_TYPE):
         # Get users with expired plans
         expired_users = db.get_expired_plans()
         
-        for user_ids in expired_users:
+        for user_IDS in expired_users:
             # Reset user to basic plan
-            db.update_plan(user_ids, 'basic', None)
+            db.update_plan(user_IDS, 'basic', None)
             
             # Notify user
             try:
                 await context.bot.send_message(
-                    chat_id=user_ids,
+                    chat_id=user_IDS,
                     text="⚠️ Tu plan premium ha expirado. Has sido cambiado al plan básico.\n"
                          "<blockquote>Para renovar tu plan, utiliza el botón 'Planes 📜' en el menú principal.</blockquote>",
                     parse_mode=ParseMode.HTML
                 )
             except Exception as e:
-                logger.error(f"Error notifying user {user_ids} about plan expiry: {e}")
+                logger.error(f"Error notifying user {user_IDS} about plan expiry: {e}")
     except Exception as e:
         logger.error(f"Error in plan expiry check: {e}")
 
