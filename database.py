@@ -52,6 +52,11 @@ class Database:
     def _create_indexes(self):
         """Crear índices para optimizar consultas"""
         try:
+            # Primero, limpiar documentos con valores nulos en campos únicos
+            self.seasons.delete_many({"season_id": None})
+            self.multi_series.delete_many({"series_id": None})
+            self.series.delete_many({"series_id": None})
+            
             # Índices para usuarios
             self.users.create_index("user_id", unique=True)
             self.users.create_index("username")
@@ -69,8 +74,9 @@ class Database:
             self.gift_codes.create_index("code", unique=True)
             
             # Índices para series multi-temporada
-            self.multi_series.create_index("series_id", unique=True)
-            self.seasons.create_index("season_id", unique=True)
+            # Usar sparse=True para permitir valores nulos sin violar restricciones de unicidad
+            self.multi_series.create_index("series_id", unique=True, sparse=True)
+            self.seasons.create_index("season_id", unique=True, sparse=True)
             self.seasons.create_index("series_id")
             self.season_episodes.create_index("season_id")
             
