@@ -6786,7 +6786,7 @@ def main() -> None:
     # Grupo -10: Handlers para carga masiva (load)
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND & filters.User(user_id=ADMIN_IDS) & 
-        filters.Create(lambda msg: context.bot_data.get('load_state', LOAD_STATE_INACTIVE) != LOAD_STATE_INACTIVE),
+        filters.create(lambda msg: context.bot_data.get('load_state', LOAD_STATE_INACTIVE) != LOAD_STATE_INACTIVE),
         handle_content_name
     ), group=-10)
 
@@ -6810,7 +6810,7 @@ def main() -> None:
     # Grupo 1: Handler para búsquedas de texto (menor prioridad)
     application.add_handler(MessageHandler(
         filters.TEXT & ~filters.COMMAND & 
-        filters.Create(lambda msg: context.bot_data.get('load_state', LOAD_STATE_INACTIVE) == LOAD_STATE_INACTIVE),
+        filters.create(lambda msg: context.bot_data.get('load_state', LOAD_STATE_INACTIVE) == LOAD_STATE_INACTIVE),
         handle_search
     ), group=1)
 
