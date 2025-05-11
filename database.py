@@ -37,6 +37,9 @@ class Database:
             self.seasons = self.db['seasons']
             self.season_episodes = self.db['season_episodes']
             
+            # Añadir colección para el caché de búsquedas
+            self.search_cache = self.db['search_cache']
+            
             # Crear índices para mejorar el rendimiento
             self._create_indexes()
             
@@ -45,11 +48,6 @@ class Database:
         except Exception as e:
             logger.error(f"Error al conectar con MongoDB: {e}")
             raise e
-    
-            self.search_cache = self.db['search_cache']
-    
-    # Crear índice TTL para expiración automática (30 días = 2592000 segundos)
-            self.search_cache.create_index("timestamp", expireAfterSeconds=2592000)  # 30 días    
     
     def _create_indexes(self):
         """Crear índices para optimizar consultas"""
@@ -75,6 +73,10 @@ class Database:
             self.seasons.create_index("season_id", unique=True)
             self.seasons.create_index("series_id")
             self.season_episodes.create_index("season_id")
+            
+            # Crear índice TTL para el caché de búsquedas (30 días = 2592000 segundos)
+            self.search_cache.create_index("timestamp", expireAfterSeconds=2592000)
+            self.search_cache.create_index("query")
             
             logger.info("Índices de MongoDB creados correctamente")
         except Exception as e:
@@ -694,3 +696,111 @@ class Database:
         except Exception as e:
             logger.error(f"Error al obtener episodios de temporada: {e}")
             return []
+
+    def save_search_cache(self, query, cache_data):
+        """Guardar resultados de búsqueda en caché"""
+        try:
+            # Asegurar que los datos del caché tienen el formato correcto
+            cache_entry = {
+                "query": query,
+                "results": cache_data["results"],
+                "timestamp": datetime.now(),
+                "cache_version": cache_data.get("cache_version", "1.0"),
+                "result_count": cache_data.get("result_count", len(cache_data["results"]))
+            }
+            
+            # Actualizar o insertar en la colección de caché
+            self.search_cache.update_one(
+                {"query": query},
+                {"$set": cache_entry},
+                upsert=True
+            )
+            
+            logger.info(f"Caché guardado para query: {query}")
+            return True
+        except Exception as e:
+            logger.error(f"Error guardando caché de búsqueda: {e}")
+            return False
+
+    def get_search_cache(self, query):
+        """Obtener resultados de búsqueda desde caché"""
+        try:
+            cache_data = self.search_cache.find_one({"query": query})
+            
+            if cache_data:
+                # Verificar si el caché está dentro del período de validez (30 días)
+                cache_time = cache_data.get('timestamp')
+                if cache_time:
+                    age = datetime.now() - cache_time
+                    if age.days <= 30:  # Caché válido por 30 días
+                        logger.info(f"Caché encontrado para query: {query}")
+                        return cache_data
+                
+                # Si el caché es muy antiguo, eliminarlo
+                self.search_cache.delete_one({"query": query})
+                
+            return None
+        except Exception as e:
+            logger.error(f"Error obteniendo caché de búsqueda: {e}")
+            return None
+
+    def clear_search_cache(self):
+        """Limpiar todo el caché de búsquedas"""
+        try:
+            result = self.search_cache.delete_many({})
+            logger.info(f"Caché limpiado: {result.deleted_count} entradas eliminadas")
+            return True
+        except Exception as e:
+            logger.error(f"Error limpiando caché de búsqueda: {e}")
+            return False
+
+    def clear_old_cache(self):
+        """Limpiar caché antiguo (más de 30 días)"""
+        try:
+            expiry_date = datetime.now() - timedelta(days=30)
+            result = self.search_cache.delete_many({
+                "timestamp": {"$lt": expiry_date}
+            })
+            logger.info(f"Caché antiguo limpiado: {result.deleted_count} entradas eliminadas")
+            return True
+        except Exception as e:
+            logger.error(f"Error limpiando caché antiguo: {e}")
+            return False
+
+    def get_cache_stats(self):
+        """Obtener estadísticas del caché"""
+        try:
+            total_entries = self.search_cache.count_documents({})
+            
+            # Calcular espacio usado (aproximado)
+            stats = self.search_cache.aggregate([
+                {
+                    "$group": {
+                        "_id": None,
+                        "total_results": {"$sum": "$result_count"},
+                        "avg_results": {"$avg": "$result_count"}
+                    }
+                }
+            ])
+            
+            stats = list(stats)
+            if stats:
+                stats = stats[0]
+                return {
+                    "total_entries": total_entries,
+                    "total_results": stats["total_results"],
+                    "avg_results_per_query": round(stats["avg_results"], 2)
+                }
+            
+            return {
+                "total_entries": total_entries,
+                "total_results": 0,
+                "avg_results_per_query": 0
+            }
+        except Exception as e:
+            logger.error(f"Error obteniendo estadísticas del caché: {e}")
+            return {
+                "total_entries": 0,
+                "total_results": 0,
+                "avg_results_per_query": 0
+            }
