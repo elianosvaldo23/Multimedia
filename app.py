@@ -5810,7 +5810,7 @@ async def request_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) < 2:
         await update.message.reply_text(
             "Uso: /pedido año nombre_del_contenido\n"
-            "<blockquote>Ejemplo: /pedido 2023 Oppenheimer</blockquote>",
+            "<blockquote>Ejemplo: /pedido 2024 Avatar 3</blockquote>",
             parse_mode=ParseMode.HTML
         )
         return
@@ -5818,7 +5818,7 @@ async def request_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Check if user is banned
     if db.is_user_banned(user_id):
         await update.message.reply_text(
-            "No puedes realizar pedidos porque has sido baneado del bot.",
+            "<blockquote>❌ No puedes realizar pedidos porque has sido baneado del bot.</blockquote>",
             parse_mode=ParseMode.HTML
         )
         return
@@ -5826,9 +5826,21 @@ async def request_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Check if user has requests left
     requests_left = db.get_requests_left(user_id)
     if requests_left <= 0:
+        keyboard = []
+        for plan_id, plan in PLANS_INFO.items():
+            if plan_id != 'basic':
+                keyboard.append([
+                    InlineKeyboardButton(
+                        f"{plan['name']} - {plan['price']}",
+                        callback_data=f"buy_plan_{plan_id}"
+                    )
+                ])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
         await update.message.reply_text(
-            "Has alcanzado el límite de pedidos diarios para tu plan.\n"
-            "<blockquote>Considera actualizar tu plan para obtener más pedidos.</blockquote>",
+            "❌ Has alcanzado el límite de pedidos diarios para tu plan.\n"
+            "<blockquote>Considera actualizar tu plan para obtener más pedidos:</blockquote>",
+            reply_markup=reply_markup,
             parse_mode=ParseMode.HTML
         )
         return
@@ -5839,23 +5851,34 @@ async def request_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Update user's request count
     db.update_request_count(user_id)
     
-    # Send request to admin
     try:
+        # Crear botones para administrador
         keyboard = [
             [InlineKeyboardButton("Aceptar ✅", callback_data=f"accept_req_{user_id}_{content_name}")]
         ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        admin_markup = InlineKeyboardMarkup(keyboard)
         
-        await context.bot.send_message(
-            chat_id=ADMIN_IDS,
-            text=f"<blockquote>📩 <b>Nuevo Pedido</b>\n\</blockquote>n"
-                 f"Usuario: {update.effective_user.first_name} (@{update.effective_user.username})\n"
-                 f"ID: {user_id}\n"
-                 f"Año: {year}\n"
-                 f"Nombre: {content_name}",
-            reply_markup=reply_markup,
-            parse_mode=ParseMode.HTML
-        )
+        # Enviar solicitud a cada administrador
+        admin_messages_sent = False
+        for admin_id in ADMIN_IDS:  # ADMIN_IDS es una lista definida al inicio
+            try:
+                await context.bot.send_message(
+                    chat_id=admin_id,
+                    text=f"<blockquote>📩 <b>Nuevo Pedido</b>\n\n</blockquote>"
+                         f"Usuario: {update.effective_user.first_name} (@{update.effective_user.username})\n"
+                         f"ID: {user_id}\n"
+                         f"Año: {year}\n"
+                         f"Nombre: {content_name}",
+                    reply_markup=admin_markup,
+                    parse_mode=ParseMode.HTML
+                )
+                admin_messages_sent = True
+            except Exception as e:
+                logger.error(f"Error enviando mensaje al admin {admin_id}: {e}")
+                continue
+        
+        if not admin_messages_sent:
+            raise Exception("No se pudo enviar el mensaje a ningún administrador")
         
         # Confirm to user
         await update.message.reply_text(
@@ -5864,10 +5887,11 @@ async def request_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Te quedan {requests_left-1} pedidos hoy.</blockquote>",
             parse_mode=ParseMode.HTML
         )
+        
     except Exception as e:
-        logger.error(f"Error sending request to admin: {e}")
+        logger.error(f"Error al enviar la solicitud al administrador: {e}")
         await update.message.reply_text(
-            "Error al enviar el pedido. Intenta más tarde.",
+            "<blockquote>❌ Error al enviar el pedido. Por favor, intenta más tarde.</blockquote>",
             parse_mode=ParseMode.HTML
         )
 
