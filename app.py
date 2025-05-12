@@ -1,7 +1,7 @@
 import logging
 import asyncio
-import aiohttp
 import re
+import aiohttp
 import time
 import requests
 from datetime import datetime, timedelta
@@ -5266,12 +5266,35 @@ async def handle_request_type(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     await query.answer()
     
-    # Store the request type in user_data
-    context.user_data['request_type'] = query.data
+    # Obtener el tipo de pedido y nombre del contenido
+    _, content_type, content_name = query.data.split('_', 2)
     
+    # Guardar el tipo y nombre en el contexto del usuario
+    context.user_data['request_type'] = content_type
+    context.user_data['request_content'] = content_name
+    
+    # Crear nuevo teclado con el botón seleccionado marcado
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                "✅ Película 🎞️" if content_type == 'movie' else "Película 🎞️",
+                callback_data=f"req_movie_{content_name}"
+            ),
+            InlineKeyboardButton(
+                "✅ Serie 📺" if content_type == 'series' else "Serie 📺",
+                callback_data=f"req_series_{content_name}"
+            )
+        ],
+        [InlineKeyboardButton("Hacer Pedido 📡", callback_data="make_request")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    # Actualizar mensaje con el botón seleccionado
     await query.edit_message_text(
-        text="Tipo seleccionado. Ahora haz clic en 'Hacer Pedido 📡' para enviar tu solicitud.",
-        reply_markup=update.callback_query.message.reply_markup,
+        text=f"Has seleccionado: <b>{content_type.capitalize()}</b>\n"
+             f"Contenido: <b>{content_name}</b>\n\n"
+             f"<blockquote>Ahora haz clic en 'Hacer Pedido 📡' para enviar tu solicitud.</blockquote>",
+        reply_markup=reply_markup,
         parse_mode=ParseMode.HTML
     )
 
@@ -5285,71 +5308,86 @@ async def handle_make_request(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     if not user_data:
         await query.edit_message_text(
-            "Error al obtener datos del usuario. Intenta con /start",
+            "❌ Error: Usuario no registrado. Usa /start para registrarte.",
             parse_mode=ParseMode.HTML
         )
         return
     
-    # Check if user has requests left
+    # Verificar que se haya seleccionado un tipo de contenido
+    request_type = context.user_data.get('request_type')
+    content_name = context.user_data.get('request_content')
+    
+    if not request_type or not content_name:
+        await query.edit_message_text(
+            "❌ Error: Debes seleccionar primero el tipo de contenido (Película o Serie).",
+            parse_mode=ParseMode.HTML
+        )
+        return
+    
+    # Verificar límites de pedidos
     requests_left = db.get_requests_left(user_id)
     if requests_left <= 0:
-        await query.edit_message_text(
-            "Has alcanzado el límite de pedidos diarios para tu plan.\n"
-            "<blockquote>Considera actualizar tu plan para obtener más pedidos.</blockquote>",
-            parse_mode=ParseMode.HTML
-        )
-        return
-    
-    # Get request type and content name
-    callback_data = context.user_data.get('request_type', '')
-    if not callback_data:
-        await query.edit_message_text(
-            "Por favor, selecciona primero el tipo de contenido (Película o Serie).",
-            parse_mode=ParseMode.HTML
-        )
-        return
-    
-    try:
-        req_type, content_name = callback_data.split('_', 2)[1:]
-    except ValueError:
-        await query.edit_message_text(
-            "Error al procesar la solicitud. Por favor, intenta nuevamente.",
-            parse_mode=ParseMode.HTML
-        )
-        return
-    
-    # Update user's request count
-    db.update_request_count(user_id)
-    
-    # Send request to admin
-    try:
-        keyboard = [
-            [InlineKeyboardButton("Aceptar ✅", callback_data=f"accept_req_{user_id}_{content_name}")]
-        ]
+        # Mostrar opciones de planes si se alcanzó el límite
+        keyboard = []
+        for plan_id, plan in PLANS_INFO.items():
+            if plan_id != 'basic':
+                keyboard.append([
+                    InlineKeyboardButton(
+                        f"{plan['name']} - {plan['price']}",
+                        callback_data=f"buy_plan_{plan_id}"
+                    )
+                ])
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await context.bot.send_message(
-            chat_id=ADMIN_IDS,
-            text=f"<blockquote>📩 <b>Nuevo Pedido</b>\n\n</blockquote>"
-                 f"Usuario: {query.from_user.first_name} (@{query.from_user.username})\n"
-                 f"ID: {user_id}\n"
-                 f"Tipo: {'Película' if req_type == 'movie' else 'Serie'}\n"
-                 f"Nombre: {content_name}",
+        await query.edit_message_text(
+            "❌ Has alcanzado tu límite de pedidos diarios.\n\n"
+            "<blockquote>Para realizar más pedidos, adquiere un plan premium:</blockquote>",
             reply_markup=reply_markup,
             parse_mode=ParseMode.HTML
         )
+        return
+    
+    try:
+        # Actualizar contador de pedidos
+        db.update_request_count(user_id)
         
-        # Confirm to user
+        # Crear botón de aceptar para el admin
+        keyboard = [
+            [InlineKeyboardButton("Aceptar ✅", callback_data=f"accept_req_{user_id}_{content_name}")]
+        ]
+        admin_markup = InlineKeyboardMarkup(keyboard)
+        
+        # Enviar pedido a los administradores
+        for admin_id in ADMIN_IDS:
+            try:
+                await context.bot.send_message(
+                    chat_id=admin_id,
+                    text=f"<blockquote>📩 <b>Nuevo Pedido</b>\n\n</blockquote>"
+                         f"Usuario: {query.from_user.first_name} (@{query.from_user.username})\n"
+                         f"<b>ID:</b> <code>{user_id}</code><br>"
+                         f"Tipo: {request_type.capitalize()}\n"
+                         f"<b>Nombre:</b> <code>{content_name}</code>",
+                    reply_markup=admin_markup,
+                    parse_mode=ParseMode.HTML
+                )
+            except Exception as e:
+                logger.error(f"Error enviando pedido al admin {admin_id}: {e}")
+                continue
+        
+        # Confirmar al usuario
         await query.edit_message_text(
-            f"✅ Tu pedido de {'película' if req_type == 'movie' else 'serie'} '{content_name}' ha sido enviado al administrador.\n"
-            f"<blockquote>Te notificaremos cuando esté disponible.\n"
-            f"Te quedan {requests_left-1} pedidos hoy.</blockquote>",
+            f"✅ Tu pedido ha sido enviado correctamente:\n\n"
+            f"<blockquote>Tipo: {request_type.capitalize()}\n"
+            f"Nombre: {content_name}\n"
+            f"Te quedan {requests_left-1} pedidos hoy.\n\n"
+            f"Te notificaremos cuando el contenido esté disponible.</blockquote>",
             parse_mode=ParseMode.HTML
         )
+        
     except Exception as e:
-        logger.error(f"Error sending request to admin: {e}")
+        logger.error(f"Error procesando pedido: {e}")
         await query.edit_message_text(
-            "Error al enviar el pedido. Intenta más tarde.",
+            "❌ Error al procesar el pedido. Por favor, intenta nuevamente.",
             parse_mode=ParseMode.HTML
         )
 
@@ -6430,7 +6468,7 @@ async def finalize_series_upload(update: Update, context: ContextTypes.DEFAULT_T
             # Agregar sinopsis en formato de cita expandible
             description += (
                 f"\n\n📝 Sinopsis:\n"
-                f"<blockquote expandable>{imdb_info.get('plot', 'No disponible')}</blockquote>\n\n"
+                f"<blockquote expandable>{imdb_info.get('plot', 'No disponible')}</blockquote>"
             )
             
             # Agregar marca de agua con enlace
