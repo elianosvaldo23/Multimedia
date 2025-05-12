@@ -28,6 +28,7 @@ import sys
 from telegram.ext import filters
 from telegram.constants import ChatType
 from deep_translator import GoogleTranslator
+import aiohttp
 
 def handle_exit(signum, frame):
     """Maneja señales de terminación"""
