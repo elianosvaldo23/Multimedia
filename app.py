@@ -27,6 +27,8 @@ import signal
 import sys
 from telegram.ext import filters
 from telegram.constants import ChatType
+from googletrans import Translator
+import aiohttp
 
 def handle_exit(signum, frame):
     """Maneja señales de terminación"""
@@ -79,6 +81,8 @@ ADD_STATE_IDLE = 0        # No hay proceso activo
 ADD_STATE_NAME = 1        # Esperando nombre después de /add
 ADD_STATE_RECEIVING = 2   # Recibiendo capítulos
 ADD_STATE_COVER = 3       # Esperando la portada
+
+translator = Translator()
 
 # Constantes para el sistema de series
 UPSER_STATE_IDLE = 0        # No hay carga de serie en proceso
@@ -1165,6 +1169,164 @@ async def finalize_multi_series_upload(update, context, status_message=None):
         logger.error(f"Error finalizando serie: {e}")
         await status_message.edit_text(
             f"<blockquote>❌ Error al finalizar la serie: {str(e)[:100]}</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+
+async def fetch_image(url):
+    """Descargar imagen de una URL"""
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as response:
+            if response.status == 200:
+                return BytesIO(await response.read())
+    return None
+
+async def buscar_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Comando para buscar contenido en TMDB/IMDb y mostrar resultados detallados"""
+    # Verificar que el usuario es administrador
+    user = update.effective_user
+    if not is_admin(user.id):
+        return
+    
+    # Verificar que hay un término de búsqueda
+    if not context.args:
+        await update.message.reply_text(
+            "Uso: /buscar nombre_del_contenido\n"
+            "<blockquote>Ejemplo: /buscar Feliz día de tu muerte 2</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        return
+    
+    query = " ".join(context.args)
+    status_msg = await update.message.reply_text(
+        f"<blockquote>🔍 Buscando información para: <b>{query}</b>...</blockquote>",
+        parse_mode=ParseMode.HTML
+    )
+    
+    try:
+        # Configuración de TMDB API
+        api_key = "ba7dc9b8dc85198f56a7b631a6519158"
+        headers = {
+            "Authorization": "Bearer eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiJiYTdkYzliOGRjODUxOThmNTZhN2I2MzFhNjUxOTE1OCIsInN1YiI6IjY4MWJiYTFiOWNkMjZiOTNhZTkzYWE4NiIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.7DJM5c5k_FpRnN9-_6tkKSO1sZ2_dGGkPAQJhGIGSjQ",
+            "Content-Type": "application/json;charset=utf-8"
+        }
+
+        # Buscar en TMDB (películas y series)
+        search_url = f"https://api.themoviedb.org/3/search/multi?api_key={api_key}&query={query}&language=es-ES"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(search_url, headers=headers) as response:
+                search_data = await response.json()
+
+        if not search_data.get('results'):
+            await status_msg.edit_text(
+                f"<blockquote>❌ No se encontraron resultados para: <b>{query}</b></blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+            return
+
+        # Procesar cada resultado
+        for result in search_data['results'][:5]:  # Limitamos a 5 resultados
+            try:
+                media_type = result.get('media_type')
+                if media_type not in ['movie', 'tv']:
+                    continue
+
+                # Obtener detalles completos
+                detail_url = f"https://api.themoviedb.org/3/{media_type}/{result['id']}?api_key={api_key}&language=es-ES&append_to_response=credits"
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(detail_url, headers=headers) as response:
+                        details = await response.json()
+
+                # Obtener título en inglés
+                detail_url_en = f"https://api.themoviedb.org/3/{media_type}/{result['id']}?api_key={api_key}&language=en-US"
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(detail_url_en, headers=headers) as response:
+                        details_en = await response.json()
+
+                # Preparar la información
+                content_type = "Serie 🎥" if media_type == 'tv' else "Película 🍿"
+                spanish_title = details.get('title' if media_type == 'movie' else 'name', 'No disponible')
+                english_title = details_en.get('original_title' if media_type == 'movie' else 'original_name', spanish_title)
+                year = details.get('release_date', '')[:4] if media_type == 'movie' else details.get('first_air_date', '')[:4]
+                rating = round(details.get('vote_average', 0), 1)
+                genres = ", ".join([g['name'] for g in details.get('genres', [])])
+                
+                # Obtener director(es)
+                directors = []
+                if media_type == 'movie':
+                    directors = [crew['name'] for crew in details.get('credits', {}).get('crew', []) if crew['job'] == 'Director']
+                else:
+                    directors = [crew['name'] for crew in details.get('credits', {}).get('crew', []) if crew['job'] in ['Creator', 'Executive Producer']]
+                director_text = ", ".join(directors) if directors else "No disponible"
+
+                # Obtener reparto principal
+                cast = [actor['name'] for actor in details.get('credits', {}).get('cast', [])[:5]]
+                cast_text = ", ".join(cast) if cast else "No disponible"
+
+                # Información adicional para series
+                additional_info = ""
+                if media_type == 'tv':
+                    status_map = {
+                        'Returning Series': 'En emisión',
+                        'Ended': 'Finalizada',
+                        'Canceled': 'Cancelada'
+                    }
+                    series_status = status_map.get(details.get('status'), details.get('status', 'Desconocido'))
+                    num_seasons = details.get('number_of_seasons', '?')
+                    num_episodes = details.get('number_of_episodes', '?')
+                    additional_info = f"\n📺 Estado: {series_status}\n🔢 {num_episodes} episodios en {num_seasons} temporadas"
+
+                # Crear mensaje
+                message = (
+                    f"{content_type}\n"
+                    f"{spanish_title} ✓\n"
+                    f"{english_title} ✓\n\n"
+                    f"📅 Año: {year}\n"
+                    f"⭐ Calificación: {rating}/10\n"
+                    f"🎭 Género: {genres}\n"
+                    f"🎬 Director: {director_text}\n"
+                    f"👥 Reparto: {cast_text}"
+                    f"{additional_info}\n\n"
+                    f"📝 Sinopsis:\n"
+                    f"<blockquote expandable>{details.get('overview', 'No disponible')}</blockquote>\n\n"
+                    f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
+                )
+
+                # Obtener y enviar póster
+                if details.get('poster_path'):
+                    poster_url = f"https://image.tmdb.org/t/p/original{details['poster_path']}"
+                    try:
+                        poster_bytes = await fetch_image(poster_url)
+                        if poster_bytes:
+                            await context.bot.send_photo(
+                                chat_id=update.effective_chat.id,
+                                photo=poster_bytes,
+                                caption=message,
+                                parse_mode=ParseMode.HTML
+                            )
+                        else:
+                            await context.bot.send_message(
+                                chat_id=update.effective_chat.id,
+                                text=f"{message}\n\n⚠️ No se pudo cargar el póster.",
+                                parse_mode=ParseMode.HTML
+                            )
+                    except Exception as e:
+                        logger.error(f"Error enviando póster: {e}")
+                        await context.bot.send_message(
+                            chat_id=update.effective_chat.id,
+                            text=message,
+                            parse_mode=ParseMode.HTML
+                        )
+
+            except Exception as e:
+                logger.error(f"Error procesando resultado: {e}")
+                continue
+
+        await status_msg.delete()
+
+    except Exception as e:
+        logger.error(f"Error en búsqueda: {e}")
+        await status_msg.edit_text(
+            f"<blockquote>❌ Error durante la búsqueda: {str(e)[:100]}</blockquote>",
             parse_mode=ParseMode.HTML
         )
 
@@ -6749,6 +6911,7 @@ def main() -> None:
     application.add_handler(CommandHandler("ser", ser_command))
     application.add_handler(CommandHandler("season", season_command))
     application.add_handler(CommandHandler("cancelser", cancel_ser_command))
+    application.add_handler(CommandHandler("buscar", buscar_command))
 
     # Add periodic keepalive message
     application.job_queue.run_repeating(
