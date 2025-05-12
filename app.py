@@ -5887,9 +5887,9 @@ async def request_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     chat_id=admin_id,
                     text=f"<blockquote>📩 <b>Nuevo Pedido</b>\n\n</blockquote>"
                          f"Usuario: {update.effective_user.first_name} (@{update.effective_user.username})\n"
-                         f"<b>ID:</b> <code>{user_id}</code><br>"
-                         f"Año:</b> <code>{year}</code><br>\n"
-                         f"<b>Nombre:</b> <code>{content_name}</code>",
+                         f"ID: {user_id}\n"
+                         f"Año: {year}\n"
+                         f"Nombre: {content_name}",
                     reply_markup=admin_markup,
                     parse_mode=ParseMode.HTML
                 )
