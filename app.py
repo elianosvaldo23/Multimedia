@@ -5396,35 +5396,56 @@ async def handle_accept_request(update: Update, context: ContextTypes.DEFAULT_TY
     query = update.callback_query
     await query.answer()
     
-    # Check if user is admin
-    if query.from_user.id != ADMIN_IDS:
+    # Verificar que el usuario es administrador
+    if query.from_user.id not in ADMIN_IDS:
+        await query.answer("⚠️ Solo los administradores pueden aceptar pedidos.", show_alert=True)
         return
     
-    # Parse callback data
     try:
-        _, req_type, user_id, content_name = query.data.split('_', 3)
-        user_id = int(user_id)
+        # Extraer información del callback_data
+        # Formato: accept_req_USER_ID_CONTENT_NAME
+        parts = query.data.split('_', 3)  # Dividir en máximo 4 partes
+        if len(parts) < 4:
+            raise ValueError("Formato de callback inválido")
+            
+        user_id = int(parts[2])
+        content_name = parts[3]
         
-        # Notify user that request was accepted
-        await context.bot.send_message(
-            chat_id=user_id,
-            text=f"✅ ¡Buenas noticias! Tu solicitud para '<b>{content_name}</b>' ha sido aceptada.\n"
-                 f"<blockquote>El contenido estará disponible pronto en el bot. Podrás buscarlo usando /search.</blockquote>",
-            parse_mode=ParseMode.HTML
-        )
-        
-        # Update admin's message
-        await query.edit_message_text(
-            text=f"✅ Pedido aceptado: <b>{content_name}</b>\n"
-                 f"<blockquote>El usuario ha sido notificado.</blockquote>",
-            reply_markup=None,
-            parse_mode=ParseMode.HTML
-        )
+        # Notificar al usuario que su pedido fue aceptado
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=f"✅ ¡Buenas noticias! Tu solicitud para '<b>{content_name}</b>' ha sido aceptada.\n\n"
+                     f"<blockquote>El contenido estará disponible pronto en el bot.\n"
+                     f"Podrás encontrarlo usando /search {content_name}</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+            
+            # Actualizar el mensaje del admin
+            new_keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton("✅ Pedido Aceptado", callback_data="dummy")
+            ]])
+            
+            await query.edit_message_text(
+                text=f"{query.message.text}\n\n"
+                     f"<blockquote>✅ Pedido aceptado y usuario notificado</blockquote>",
+                reply_markup=new_keyboard,
+                parse_mode=ParseMode.HTML
+            )
+            
+        except Exception as e:
+            logger.error(f"Error notificando al usuario {user_id}: {e}")
+            await query.edit_message_text(
+                text=f"{query.message.text}\n\n"
+                     f"<blockquote>⚠️ Pedido aceptado pero no se pudo notificar al usuario</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+            
     except Exception as e:
         logger.error(f"Error handling accept request: {e}")
         await query.edit_message_text(
-            text="Error al procesar la aceptación del pedido.",
-            reply_markup=None,
+            text=f"{query.message.text}\n\n"
+            f"<blockquote>❌ Error al procesar la aceptación del pedido: {str(e)[:100]}</blockquote>",
             parse_mode=ParseMode.HTML
         )
 
@@ -5866,9 +5887,9 @@ async def request_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     chat_id=admin_id,
                     text=f"<blockquote>📩 <b>Nuevo Pedido</b>\n\n</blockquote>"
                          f"Usuario: {update.effective_user.first_name} (@{update.effective_user.username})\n"
-                         f"ID: {user_id}\n"
-                         f"Año: {year}\n"
-                         f"Nombre: {content_name}",
+                         f"<b>ID:</b> <code>{user_id}</code><br>"
+                         f"Año:</b> <code>{year}</code><br>\n"
+                         f"<b>Nombre:</b> <code>{content_name}</code>",
                     reply_markup=admin_markup,
                     parse_mode=ParseMode.HTML
                 )
