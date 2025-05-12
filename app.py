@@ -27,8 +27,7 @@ import signal
 import sys
 from telegram.ext import filters
 from telegram.constants import ChatType
-from googletrans import Translator
-import aiohttp
+from deep_translator import GoogleTranslator
 
 def handle_exit(signum, frame):
     """Maneja señales de terminación"""
@@ -81,8 +80,6 @@ ADD_STATE_IDLE = 0        # No hay proceso activo
 ADD_STATE_NAME = 1        # Esperando nombre después de /add
 ADD_STATE_RECEIVING = 2   # Recibiendo capítulos
 ADD_STATE_COVER = 3       # Esperando la portada
-
-translator = Translator()
 
 # Constantes para el sistema de series
 UPSER_STATE_IDLE = 0        # No hay carga de serie en proceso
@@ -1180,6 +1177,8 @@ async def fetch_image(url):
                 return BytesIO(await response.read())
     return None
 
+from deep_translator import GoogleTranslator
+
 async def buscar_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Comando para buscar contenido en TMDB/IMDb y mostrar resultados detallados"""
     # Verificar que el usuario es administrador
@@ -1203,6 +1202,9 @@ async def buscar_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     )
     
     try:
+        # Inicializar traductor
+        translator = GoogleTranslator(source='en', target='es')
+        
         # Configuración de TMDB API
         api_key = "ba7dc9b8dc85198f56a7b631a6519158"
         headers = {
@@ -1241,6 +1243,15 @@ async def buscar_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 async with aiohttp.ClientSession() as session:
                     async with session.get(detail_url_en, headers=headers) as response:
                         details_en = await response.json()
+
+                # Si la sinopsis en español está vacía, traducir desde inglés
+                if not details.get('overview', '').strip() and details_en.get('overview'):
+                    try:
+                        translated_overview = translator.translate(details_en['overview'])
+                        details['overview'] = translated_overview
+                    except Exception as e:
+                        logger.error(f"Error traduciendo sinopsis: {e}")
+                        details['overview'] = details_en['overview']
 
                 # Preparar la información
                 content_type = "Serie 🎥" if media_type == 'tv' else "Película 🍿"
