@@ -2,6 +2,7 @@ import pymongo
 from datetime import datetime, timedelta
 import logging
 import os
+import re
 from bson.objectid import ObjectId
 
 # Configuración del registro
@@ -74,10 +75,17 @@ class Database:
             self.gift_codes.create_index("code", unique=True)
             
             # Índices para series multi-temporada
-            # Usar sparse=True para permitir valores nulos sin violar restricciones de unicidad
-            self.multi_series.create_index("series_id", unique=True, sparse=True)
-            self.seasons.create_index("season_id", unique=True, sparse=True)
-            self.seasons.create_index("series_id")
+            self.multi_series.create_index("series_id", unique=True)
+            
+            # Índice compuesto para temporadas (series_id + season_number debe ser único)
+            self.seasons.create_index([
+                ("series_id", pymongo.ASCENDING),
+                ("season_number", pymongo.ASCENDING)
+            ], unique=True)
+            
+            # Índice simple para season_id
+            self.seasons.create_index("season_id", unique=True)
+            
             self.season_episodes.create_index("season_id")
             
             # Crear índice TTL para el caché de búsquedas (30 días = 2592000 segundos)
@@ -614,34 +622,49 @@ class Database:
             season_id = int(season_id)
             series_id = int(series_id)
             
+            # Extraer número de temporada del nombre usando expresión regular
+            season_number = None
+            match = re.search(r'temporada\s*(\d+)', season_name.lower())
+            if match:
+                season_number = int(match.group(1))
+            else:
+                # Si no encuentra el número en el nombre, usar un contador
+                existing_seasons = self.db.seasons.find({'series_id': series_id}).sort('season_number', -1).limit(1)
+                last_season = next(existing_seasons, None)
+                season_number = (last_season.get('season_number', 0) if last_season else 0) + 1
+
             # Verificar si ya existe una temporada con este ID
-            existing_season = self.db.seasons.find_one({'season_id': season_id})
+            existing_season = self.db.seasons.find_one({
+                'series_id': series_id,
+                'season_number': season_number
+            })
+            
             if existing_season:
-                # Ya existe, actualizamos en lugar de insertar
+                # Actualizar la temporada existente
                 self.db.seasons.update_one(
-                    {'season_id': season_id},
+                    {'_id': existing_season['_id']},
                     {'$set': {
-                        'series_id': series_id,
+                        'season_id': season_id,
                         'season_name': season_name,
                         'updated_date': datetime.now()
                     }}
                 )
-                logger.info(f"Temporada actualizada: {season_id} - {season_name}")
             else:
-                # No existe, insertamos nueva temporada
+                # Insertar nueva temporada
                 season_data = {
                     'season_id': season_id,
                     'series_id': series_id,
                     'season_name': season_name,
+                    'season_number': season_number,  # Añadir número de temporada
                     'added_date': datetime.now()
                 }
                 self.db.seasons.insert_one(season_data)
-                logger.info(f"Nueva temporada añadida: {season_id} - {season_name}")
             
+            logger.info(f"Temporada {season_number} añadida/actualizada para serie {series_id}: {season_name}")
             return season_id
+            
         except Exception as e:
             logger.error(f"Error en add_season: {e}")
-            # Re-lanzar la excepción para manejarla en niveles superiores
             raise
 
     def add_season_episode(self, season_id, episode_number, message_id):
@@ -680,7 +703,7 @@ class Database:
             logger.info(f"get_seasons: Encontradas {len(seasons_list)} temporadas para series_id {series_id}")
             
             # Ordenar por nombre de temporada
-            seasons_list.sort(key=lambda x: x.get('season_name', ''))
+            seasons_list.sort(key=lambda x: x.get('season_number', 0))
             
             return seasons_list
         except Exception as e:
