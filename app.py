@@ -28,7 +28,6 @@ import sys
 from telegram.ext import filters
 from telegram.constants import ChatType
 from deep_translator import GoogleTranslator
-import aiohttp
 
 def handle_exit(signum, frame):
     """Maneja señales de terminación"""
@@ -6347,6 +6346,7 @@ async def finalize_series_upload(update: Update, context: ContextTypes.DEFAULT_T
         episodes = current_series.get('episodes', [])
         imdb_info = current_series.get('imdb_info', {})
         title = current_series.get('title', 'Serie sin título')
+        media_type = current_series.get('media_type', 'tv')  # Asumir 'tv' como predeterminado
 
         if not episodes:
             raise ValueError("No hay episodios para procesar")
@@ -6399,13 +6399,48 @@ async def finalize_series_upload(update: Update, context: ContextTypes.DEFAULT_T
         # 2. Generar descripción
         description = current_series.get('description')
         if not description and imdb_info:
+            # Determinar tipo de contenido
+            content_type_header = "<blockquote>Serie 🎥</blockquote>\n" if media_type == 'tv' else "<blockquote>Película 🍿</blockquote>\n"
+            
+            # Crear descripción con el formato correcto
             description = (
-                f"<b>{imdb_info['title']}</b> ({imdb_info.get('year', 'N/A')})\n\n"
-                f"⭐ <b>Calificación:</b> {imdb_info.get('rating', 'N/A')}/10\n"
-                f"🎭 <b>Género:</b> {imdb_info.get('genres', 'No disponible')}\n"
-                f"🎬 <b>Director:</b> {imdb_info.get('directors', 'No disponible')}\n"
-                f"👥 <b>Reparto:</b> {imdb_info.get('cast', 'No disponible')}\n\n"
-                f"📝 <b>Sinopsis:</b>\n<blockquote expandable>{imdb_info.get('plot', 'No disponible')}</blockquote>\n\n"
+                f"{content_type_header}"  # Tipo de contenido primero y en blockquote
+                f"<b>{imdb_info['title']}</b> ✓\n"  # Título en español
+                f"<b>{imdb_info.get('original_title', imdb_info['title'])}</b> ✓\n\n"  # Título en inglés
+                f"📅 Año: {imdb_info.get('year', 'N/A')}\n"
+                f"⭐ Calificación: {imdb_info.get('rating', 'N/A')}/10\n"
+                f"🎭 Género: {imdb_info.get('genres', 'No disponible')}\n"
+                f"🎬 Director: {imdb_info.get('directors', 'No disponible')}\n"
+                f"👥 Reparto: {imdb_info.get('cast', 'No disponible')}"
+            )
+            
+            # Agregar información adicional para series
+            if media_type == 'tv':
+                status_map = {
+                    'Returning Series': 'En emisión',
+                    'Ended': 'Finalizada',
+                    'Canceled': 'Cancelada'
+                }
+                series_status = status_map.get(imdb_info.get('status'), 'Desconocido')
+                num_seasons = imdb_info.get('number_of_seasons', '?')
+                num_episodes = imdb_info.get('number_of_episodes', '?')
+                description += f"\n📺 Estado: {series_status}\n🔢 {num_episodes} episodios en {num_seasons} temporadas"
+            
+            # Agregar sinopsis en formato de cita expandible
+            description += (
+                f"\n\n📝 Sinopsis:\n"
+                f"<blockquote expandable>{imdb_info.get('plot', 'No disponible')}</blockquote>\n\n"
+            )
+            
+            # Agregar marca de agua con enlace
+            description += f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
+        else:
+            # Si no hay información de IMDb, crear una descripción básica
+            content_type_header = "<blockquote>Serie 🎥</blockquote>\n" if media_type == 'tv' else "<blockquote>Película 🍿</blockquote>\n"
+            description = (
+                f"{content_type_header}"
+                f"<b>{title}</b> ✓\n\n"
+                f"<blockquote>No se encontró información adicional para este contenido.</blockquote>\n\n"
                 f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
             )
         
