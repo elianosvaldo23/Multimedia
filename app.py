@@ -5363,10 +5363,10 @@ async def handle_make_request(update: Update, context: ContextTypes.DEFAULT_TYPE
                 await context.bot.send_message(
                     chat_id=admin_id,
                     text=f"<blockquote>📩 <b>Nuevo Pedido</b>\n\n</blockquote>"
-                         f"Usuario: {query.from_user.first_name} (@{query.from_user.username})\n"
-                         f"<b>ID:</b> <code>{user_id}</code><br>"
-                         f"Tipo: {request_type.capitalize()}\n"
-                         f"<b>Nombre:</b> <code>{content_name}</code>",
+                         f"Usuario: {update.effective_user.first_name} (@{update.effective_user.username})\n"
+                         f"ID: {user_id}\n"
+                         f"Año: {year}\n"
+                         f"Nombre: {content_name}",
                     reply_markup=admin_markup,
                     parse_mode=ParseMode.HTML
                 )
@@ -5830,8 +5830,9 @@ async def request_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Check arguments
     if len(context.args) < 2:
         await update.message.reply_text(
-            "Uso: /pedido año nombre_del_contenido\n"
-            "<blockquote>Ejemplo: /pedido 2024 Avatar 3</blockquote>",
+            "Uso: /pedido Tipo (Pelicula o Serie) año nombre_del_contenido\n"
+            "<blockquote>Ejemplo: /pedido Pelicula 2024 Avatar 3</blockquote>"
+            "<blockquote>Debes enviar el Formato correcto, de lo contrario su solicitud no sera atendida</blockquote>",
             parse_mode=ParseMode.HTML
         )
         return
@@ -6020,7 +6021,7 @@ async def broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
             try:
                 await context.bot.send_message(
                     chat_id=user_id,
-                    text=f"<blockquote>📢 <b>Anuncio Oficial</b>\n\n{message}</blockquote>",
+                    text=f"<blockquote>📢 <b>Anuncio Oficial</b></blockquote>\n{message}",
                     parse_mode=ParseMode.HTML
                 )
                 sent_count += 1
