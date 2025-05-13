@@ -5357,22 +5357,31 @@ async def handle_make_request(update: Update, context: ContextTypes.DEFAULT_TYPE
         ]
         admin_markup = InlineKeyboardMarkup(keyboard)
         
+        # Obtener año actual si no se especifica
+        current_year = datetime.now().year
+        
         # Enviar pedido a los administradores
+        admin_messages_sent = False
         for admin_id in ADMIN_IDS:
             try:
                 await context.bot.send_message(
                     chat_id=admin_id,
                     text=f"<blockquote>📩 <b>Nuevo Pedido</b>\n\n</blockquote>"
-                         f"Usuario: {update.effective_user.first_name} (@{update.effective_user.username})\n"
+                         f"Usuario: {query.from_user.first_name} (@{query.from_user.username})\n"
                          f"ID: {user_id}\n"
-                         f"Año: {year}\n"
+                         f"Tipo: {request_type.capitalize()}\n"
+                         f"Año: {current_year}\n"  # Usando el año actual
                          f"Nombre: {content_name}",
                     reply_markup=admin_markup,
                     parse_mode=ParseMode.HTML
                 )
+                admin_messages_sent = True
             except Exception as e:
                 logger.error(f"Error enviando pedido al admin {admin_id}: {e}")
                 continue
+        
+        if not admin_messages_sent:
+            raise Exception("No se pudo enviar el mensaje a ningún administrador")
         
         # Confirmar al usuario
         await query.edit_message_text(
