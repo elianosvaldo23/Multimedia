@@ -7128,7 +7128,7 @@ def main() -> None:
     
     # Add callback query handler
     application.add_handler(CallbackQueryHandler(handle_callback_query))
-    application.add_handler(CallbackQueryHandler(handle_post_selection, pattern=r"^select_post_"))
+    application.add_handler(CallbackQueryHandler(handle_result_selection, pattern=r"^select_result_"))
 
     # Handlers organizados por prioridad (grupos)
     # Grupo -12: Handlers para el comando ser (mayor prioridad)
