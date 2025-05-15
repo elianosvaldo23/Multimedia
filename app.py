@@ -3180,7 +3180,6 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
     # Verificar si ya hay contenido pendiente (automáticamente finalizar lo anterior)
     current_content = context.bot_data.get('current_content', {})
     if load_state == LOAD_STATE_WAITING_FILES and current_content.get('files'):
-        # Hay un contenido pendiente con archivos, procesarlo primero
         await update.message.reply_text(
             f"<blockquote>⚙️ Detectado nuevo nombre: <b>{content_name}</b>\n"
             f"Primero procesaré el contenido anterior: <b>{current_content.get('title', 'Contenido sin título')}</b></blockquote>",
@@ -3192,118 +3191,70 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     # Crear un mensaje de estado para este proceso específico
     status_msg = await update.message.reply_text(
-        f"<blockquote>🔍 Buscando información para: <b>{content_name}</b>...</blockquote>",
+        f"<blockquote>🔍 Buscando información en TMDB para: <b>{content_name}</b>...</blockquote>",
         parse_mode=ParseMode.HTML
     )
     
     try:
-        # Buscar información en TMDB/IMDb
-        imdb_info = await search_imdb_info(content_name)
-        
-        if imdb_info:
-            # Crear descripción del contenido
-            content_type_header = "<blockquote>Serie 🎥</blockquote>" if imdb_info.get('is_series') else "<blockquote>Película 🍿</blockquote>"
-            description = (
-                f"{content_type_header}"
-                f"<b>{imdb_info['title']}</b> ✓\n"
-                f"<b>{imdb_info.get('original_title', imdb_info['title'])}</b> ✓\n\n"
-                f"📅 Año: {imdb_info.get('year', 'N/A')}\n"
-                f"⭐ Calificación: {imdb_info.get('rating', 'N/A')}/10\n"
-                f"🎭 Género: {imdb_info.get('genres', 'No disponible')}\n"
-                f"🎬 Director: {imdb_info.get('directors', 'No disponible')}\n"
-                f"👥 Reparto: {imdb_info.get('cast', 'No disponible')}\n\n"
-                f"📝 Sinopsis:\n<blockquote expandable>{imdb_info.get('plot', 'No disponible')}</blockquote>\n\n"
-                f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
-            )
+        # Configuración de TMDB API
+        api_key = "ba7dc9b8dc85198f56a7b631a6519158"
+        headers = {
+            "Authorization": "Bearer eyJhbGciOiJIUzI1NiJ9.eyJhdWQiOiJiYTdkYzliOGRjODUxOThmNTZhN2I2MzFhNjUxOTE1OCIsInN1YiI6IjY4MWJiYTFiOWNkMjZiOTNhZTkzYWE4NiIsInNjb3BlcyI6WyJhcGlfcmVhZCJdLCJ2ZXJzaW9uIjoxfQ.GzgTuGCUQscf-sEQLHZV7qoXf5q9fKTrEH5kD9QCiHg",
+            "Content-Type": "application/json;charset=utf-8"
+        }
 
-            # Si hay póster disponible, enviar imagen con la descripción
-            if imdb_info.get('poster_url'):
-                try:
-                    # Descargar póster
-                    poster_response = requests.get(imdb_info['poster_url'])
-                    poster_response.raise_for_status()
-                    poster_bytes = BytesIO(poster_response.content)
+        # Buscar en TMDB (películas y series)
+        search_url = f"https://api.themoviedb.org/3/search/multi?api_key={api_key}&query={content_name}&language=es-ES"
+        response = requests.get(search_url, headers=headers)
+        response.raise_for_status()
+        search_data = response.json()
 
-                    # Crear botón para seleccionar este resultado
-                    keyboard = [[InlineKeyboardButton(
-                        "elegir este ➡️",
-                        callback_data=f"select_result_{hash(content_name)}"
-                    )]]
-                    reply_markup = InlineKeyboardMarkup(keyboard)
-
-                    # Enviar póster con descripción y botón
-                    await context.bot.send_photo(
-                        chat_id=update.effective_chat.id,
-                        photo=poster_bytes,
-                        caption=description,
-                        reply_markup=reply_markup,
-                        parse_mode=ParseMode.HTML
-                    )
-
-                except Exception as e:
-                    logger.error(f"Error enviando póster: {e}")
-                    # Si falla el envío del póster, enviar solo el texto
-                    await context.bot.send_message(
-                        chat_id=update.effective_chat.id,
-                        text=description,
-                        reply_markup=reply_markup,
-                        parse_mode=ParseMode.HTML
-                    )
-            else:
-                # Si no hay póster, enviar solo el texto
-                keyboard = [[InlineKeyboardButton(
-                    "elegir este ➡️",
-                    callback_data=f"select_result_{hash(content_name)}"
-                )]]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                
-                await context.bot.send_message(
-                    chat_id=update.effective_chat.id,
-                    text=description,
-                    reply_markup=reply_markup,
-                    parse_mode=ParseMode.HTML
-                )
-
-            # Guardar información temporal
-            context.user_data['pending_selection'] = {
-                'content_name': content_name,
-                'imdb_info': imdb_info,
-                'content_hash': hash(content_name)
-            }
-
+        if not search_data.get('results'):
             await status_msg.edit_text(
-                f"<blockquote>✅ Información encontrada para: <b>{content_name}</b>\n"
-                f"Utiliza el botón 'elegir este ➡️' para continuar con este contenido.</blockquote>",
+                f"<blockquote>⚠️ No se encontraron resultados en TMDB para: <b>{content_name}</b>\n"
+                f"Continuando sin información adicional.</blockquote>",
                 parse_mode=ParseMode.HTML
             )
+            return
+        
+        # Obtener el primer resultado
+        first_result = search_data['results'][0]
+        media_type = first_result.get('media_type', 'movie')
+        media_id = first_result.get('id')
+        
+        # Obtener información detallada
+        detail_url = f"https://api.themoviedb.org/3/{media_type}/{media_id}?api_key={api_key}&language=es-ES&append_to_response=credits"
+        response = requests.get(detail_url, headers=headers)
+        response.raise_for_status()
+        details = await response.json()
 
-        else:
-            # No se encontró información en TMDb/IMDb
-            keyboard = [[InlineKeyboardButton(
-                "elegir este ➡️",
-                callback_data=f"select_result_{hash(content_name)}"
-            )]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-
-            await context.bot.send_message(
-                chat_id=update.effective_chat.id,
-                text=f"<blockquote>⚠️ No se encontró información para: <b>{content_name}</b>\n"
-                     f"Puedes continuar con información básica.</blockquote>",
-                reply_markup=reply_markup,
-                parse_mode=ParseMode.HTML
-            )
-
-            # Guardar información básica temporal
-            context.user_data['pending_selection'] = {
-                'content_name': content_name,
-                'imdb_info': None,
-                'content_hash': hash(content_name)
-            }
+        # Crear estructura para el contenido actual
+        current_content = {
+            'name': content_name,
+            'imdb_info': details,
+            'files': [],
+            'content_type': 'series' if media_type == 'tv' else 'movie',
+            'season_num': None,
+            'title': content_name,
+            'custom_filename': content_name
+        }
+        
+        context.bot_data['current_content'] = current_content
+        context.bot_data['load_state'] = LOAD_STATE_WAITING_FILES
+        
+        # Mostrar información encontrada
+        await status_msg.edit_text(
+            f"<blockquote>✅ Información encontrada para: <b>{content_name}</b>\n"
+            f"Tipo: {media_type.upper()}\n"
+            f"Ahora puedes enviar los archivos del contenido.</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
 
     except Exception as e:
-        logger.error(f"Error buscando información: {e}")
+        logger.error(f"Error buscando en TMDB: {e}")
         await status_msg.edit_text(
-            f"<blockquote>❌ Error al buscar información: {str(e)[:100]}</blockquote>",
+            f"<blockquote>❌ Error al buscar información: {str(e)[:100]}\n"
+            f"Puedes continuar enviando los archivos.</blockquote>",
             parse_mode=ParseMode.HTML
         )
         
@@ -3327,13 +3278,16 @@ async def handle_result_selection(update: Update, context: ContextTypes.DEFAULT_
     await query.answer()
     
     try:
-        # Extraer hash del contenido
-        _, content_hash = query.data.split('_')
+        # Extraer índice del resultado y hash del content_name
+        _, result_index, content_hash = query.data.split('_')
+        result_index = int(result_index)
         content_hash = int(content_hash)
         
-        # Verificar que corresponde a la selección pendiente
-        pending_selection = context.user_data.get('pending_selection', {})
-        if not pending_selection or hash(pending_selection['content_name']) != content_hash:
+        # Verificar que corresponde a la búsqueda actual
+        results = context.user_data.get('search_results', [])
+        content_name = context.user_data.get('content_name', '')
+        
+        if not results or hash(content_name) != content_hash:
             await query.edit_message_reply_markup(None)
             await context.bot.send_message(
                 chat_id=query.message.chat_id,
@@ -3342,28 +3296,32 @@ async def handle_result_selection(update: Update, context: ContextTypes.DEFAULT_
             )
             return
         
-        # Inicializar contenido con la información seleccionada
+        # Obtener el resultado seleccionado
+        selected_result = results[result_index]
+        
+        # Inicializar el contenido actual con la información seleccionada
         current_content = {
-            'name': pending_selection['content_name'],
-            'imdb_info': pending_selection.get('imdb_info', {}),
+            'name': content_name,
+            'imdb_info': selected_result,
             'files': [],
-            'content_type': 'series' if pending_selection.get('imdb_info', {}).get('is_series') else 'movie',
+            'content_type': 'series' if selected_result['media_type'] == 'tv' else 'movie',
             'season_num': None,
-            'title': pending_selection['content_name'],
-            'custom_filename': pending_selection['content_name']
+            'title': selected_result.get('title' if selected_result['media_type'] == 'movie' else 'name', content_name),
+            'custom_filename': content_name
         }
         
         context.bot_data['current_content'] = current_content
         context.bot_data['load_state'] = LOAD_STATE_WAITING_FILES
         
-        # Limpiar selección pendiente
-        context.user_data.pop('pending_selection', None)
+        # Limpiar datos temporales
+        context.user_data.pop('search_results', None)
+        context.user_data.pop('content_name', None)
         
         # Actualizar mensaje con confirmación
         await query.edit_message_reply_markup(None)
         await context.bot.send_message(
             chat_id=query.message.chat_id,
-            text=f"<blockquote>✅ Has seleccionado: <b>{current_content['name']}</b>\n"
+            text=f"<blockquote>✅ Has seleccionado: <b>{current_content['title']}</b>\n"
                  f"Ahora puedes enviar los archivos del contenido.</blockquote>",
             parse_mode=ParseMode.HTML
         )
