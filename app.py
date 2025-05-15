@@ -29,6 +29,7 @@ import sys
 from telegram.ext import filters
 from telegram.constants import ChatType
 from deep_translator import GoogleTranslator
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 def handle_exit(signum, frame):
     """Maneja señales de terminación"""
@@ -3111,11 +3112,12 @@ async def load_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.message.reply_text(
             "<blockquote>📥 <b>Modo de carga masiva activado</b>\n\n"
             "1️⃣ Envía primero el nombre exacto del contenido tal como lo quieres buscar en IMDb\n"
-            "2️⃣ El bot buscará información en IMDb y traducirá automáticamente la sinopsis\n"
-            "3️⃣ Luego envía todos los archivos de la película o capítulos de la serie\n"
-            "4️⃣ Al enviar el archivo, éste será renombrado con el mismo nombre del contenido que buscaste\n"
-            "5️⃣ Para continuar con otro contenido, simplemente envía el nombre del siguiente\n"
-            "6️⃣ Para finalizar el modo de carga masiva, envía /load nuevamente\n\n"
+            "2️⃣ El bot buscará información en IMDb y te mostrará todas las coincidencias encontradas\n"
+            "3️⃣ Selecciona la coincidencia correcta usando el botón 'elegir este ➡️'\n"
+            "4️⃣ Luego envía todos los archivos de la película o capítulos de la serie\n"
+            "5️⃣ Al enviar el archivo, éste será renombrado con el mismo nombre del contenido que elegiste\n"
+            "6️⃣ Para continuar con otro contenido, simplemente envía el nombre del siguiente\n"
+            "7️⃣ Para finalizar el modo de carga masiva, envía /load nuevamente\n\n"
             "✅ El bot procesará todo con efectos visuales como el comando /upser</blockquote>",
             parse_mode=ParseMode.HTML
         )
@@ -3192,99 +3194,101 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     # Crear un mensaje de estado para este proceso específico
     status_msg = await update.message.reply_text(
-        f"<blockquote>🔍 Buscando información en TMDB para: <b>{content_name}</b>...</blockquote>",
+        f"<blockquote>🔍 Buscando información en TMDB y todos los posts relacionados con: <b>{content_name}</b>...</blockquote>",
         parse_mode=ParseMode.HTML
     )
     
     try:
-        # Buscar información solo en TMDB/IMDb
+        # 1. Buscar información en TMDB/IMDb
         imdb_info = await search_imdb_info(content_name)
         
-        # Inicializar el contenido actual sin buscar en canales
-        current_content = {
+        # 2. Buscar posts existentes en el canal con ese nombre
+        found_posts = await search_posts_by_name(context, content_name)
+        
+        # Inicializar el contenido actual
+        context.bot_data['current_content'] = {
             'name': content_name,
             'imdb_info': imdb_info or {},
             'files': [],
             'content_type': 'movie',  # Por defecto película, puede cambiar
             'season_num': None,
             'title': content_name,
-            'custom_filename': content_name  # Usar el nombre exacto que el admin proporcionó
+            'custom_filename': content_name,  # Usar el nombre exacto proporcionado
+            'selected_post': None  # No hay post seleccionado aún
         }
         
-        context.bot_data['current_content'] = current_content
-        
-        if not imdb_info:
-            # No se encontró información en TMDB
+        # Mostrar información de TMDB si está disponible
+        if imdb_info:
             await status_msg.edit_text(
-                f"<blockquote>⚠️ No se encontró información en TMDB para <b>{content_name}</b>.\n"
-                f"Continuaremos con información básica.\n"
-                f"Los archivos se renombrarán como <b>{content_name}</b>.\n"
-                f"Ahora envía los archivos del contenido.</blockquote>",
-                parse_mode=ParseMode.HTML
-            )
-        else:
-            # Se encontró información en TMDB
-            await status_msg.edit_text(
-                f"<blockquote>✅ Información encontrada: <b>{imdb_info['title']} ({imdb_info['year']})</b>\n"
+                f"<blockquote>✅ Información encontrada en TMDB: <b>{imdb_info['title']} ({imdb_info['year']})</b>\n"
                 f"⭐ Calificación: {imdb_info['rating']}/10\n"
-                f"🔍 Buscando póster de alta calidad...\n"
-                f"Los archivos se renombrarán como <b>{content_name}</b>.</blockquote>",
+                f"🔍 Encontré {len(found_posts)} posts relacionados.\n"
+                f"Por favor, selecciona el post correcto:</blockquote>",
                 parse_mode=ParseMode.HTML
             )
             
             # Actualizar el título en el contenido actual
-            current_content['title'] = imdb_info['title']
+            context.bot_data['current_content']['title'] = imdb_info['title']
             
-            # Preparar mensaje para el administrador
+            # Mostrar póster si está disponible
             if imdb_info['poster_url']:
                 try:
-                    # Descargar póster para mostrar
                     poster_response = requests.get(imdb_info['poster_url'])
                     poster_response.raise_for_status()
                     poster_bytes = BytesIO(poster_response.content)
                     
-                    # Enviar póster con información como vista previa
-                    preview_text = (
-                        f"✅ <b>{imdb_info['title']}</b> ({imdb_info['year']})\n\n"
-                        f"⭐ <b>Calificación:</b> {imdb_info['rating']}/10\n"
-                        f"🎭 <b>Género:</b> {imdb_info['genres']}\n\n"
-                        f"<blockquote>Ahora envía los archivos del contenido.\n"
-                        f"Los archivos se renombrarán como <b>{content_name}</b>.\n"
-                        f"Cuando termines, envía el nombre del siguiente contenido.</blockquote>"
-                    )
-                    
                     await context.bot.send_photo(
                         chat_id=update.effective_chat.id,
                         photo=poster_bytes,
-                        caption=preview_text,
+                        caption=f"<b>Póster de {imdb_info['title']}</b>",
                         parse_mode=ParseMode.HTML
                     )
-                    
-                    # Eliminar mensaje de estado
-                    await status_msg.delete()
-                    
                 except Exception as e:
-                    logger.error(f"Error descargando póster para vista previa: {e}")
-                    await status_msg.edit_text(
-                        f"<blockquote>✅ Información encontrada: <b>{imdb_info['title']} ({imdb_info['year']})</b>\n"
-                        f"⚠️ No se pudo descargar póster para vista previa\n"
-                        f"Los archivos se renombrarán como <b>{content_name}</b>.\n"
-                        f"Ahora envía los archivos del contenido.</blockquote>",
+                    logger.error(f"Error descargando póster: {e}")
+        else:
+            # No se encontró información en TMDB
+            await status_msg.edit_text(
+                f"<blockquote>⚠️ No se encontró información en TMDB para <b>{content_name}</b>.\n"
+                f"🔍 Encontré {len(found_posts)} posts relacionados.\n"
+                f"Por favor, selecciona el post correcto:</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+        
+        # 3. Mostrar todos los posts encontrados con botón para seleccionar
+        if found_posts:
+            for i, post in enumerate(found_posts):
+                # Crear botón para seleccionar este post
+                keyboard = [[InlineKeyboardButton("elegir este ➡️", callback_data=f"select_post_{post['id']}_{i}")]]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                try:
+                    # Enviar el post para que el admin lo vea
+                    await context.bot.copy_message(
+                        chat_id=update.effective_chat.id,
+                        from_chat_id=post['chat_id'],
+                        message_id=post['message_id'],
+                        reply_markup=reply_markup
+                    )
+                except Exception as e:
+                    logger.error(f"Error copiando post {i}: {e}")
+                    await context.bot.send_message(
+                        chat_id=update.effective_chat.id,
+                        text=f"<blockquote>❌ Error al mostrar post #{i+1}: {str(e)[:100]}</blockquote>",
                         parse_mode=ParseMode.HTML
                     )
-            else:
-                await status_msg.edit_text(
-                    f"<blockquote>✅ Información encontrada: <b>{imdb_info['title']} ({imdb_info['year']})</b>\n"
-                    f"⚠️ No se encontró póster para este contenido\n"
-                    f"Los archivos se renombrarán como <b>{content_name}</b>.\n"
-                    f"Ahora envía los archivos del contenido.</blockquote>",
-                    parse_mode=ParseMode.HTML
-                )
+                
+                # Pequeña pausa para evitar flood
+                await asyncio.sleep(0.5)
+        else:
+            await update.message.reply_text(
+                f"<blockquote>⚠️ No se encontraron posts relacionados con <b>{content_name}</b>.\n"
+                f"Puedes continuar enviando archivos, se utilizará el nombre proporcionado.</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+            # Cambiar a estado de espera de archivos sin post seleccionado
+            context.bot_data['load_state'] = LOAD_STATE_WAITING_FILES
         
-        # Cambiar estado a esperar archivos
-        context.bot_data['load_state'] = LOAD_STATE_WAITING_FILES
-        
-        # Actualizar mensaje de estado general
+        # Actualizar mensaje de estado global
         await update_load_status_message(update, context)
         
     except Exception as e:
@@ -3305,11 +3309,141 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
             'content_type': 'movie',
             'season_num': None,
             'title': content_name,
-            'custom_filename': content_name
+            'custom_filename': content_name,
+            'selected_post': None
         }
         
         # Cambiar estado a esperar archivos
         context.bot_data['load_state'] = LOAD_STATE_WAITING_FILES
+
+# Función para buscar posts relacionados con un nombre
+async def search_posts_by_name(context, name: str):
+    """Busca posts en el canal que coincidan con el nombre proporcionado"""
+    found_posts = []
+    name_lower = name.lower()
+    
+    try:
+        # Obtener el último message_id conocido
+        latest_id = await get_latest_message_id(context)
+        
+        # Buscar en los últimos 500 mensajes (ajustable según necesidad)
+        search_count = min(latest_id, 500)
+        
+        # Definir una lista de IDs a verificar
+        message_ids = list(range(latest_id, latest_id - search_count, -1))
+        
+        # Buscar en lotes para no sobrecargar
+        batch_size = 20
+        for i in range(0, len(message_ids), batch_size):
+            batch = message_ids[i:i+batch_size]
+            
+            for msg_id in batch:
+                try:
+                    # Intentar obtener mensaje del canal
+                    message = await context.bot.copy_message(
+                        chat_id=ADMIN_IDS[0],  # Usar el primer admin como destino temporal
+                        from_chat_id=SEARCH_CHANNEL_ID,
+                        message_id=msg_id,
+                        disable_notification=True
+                    )
+                    
+                    # Extraer texto y caption
+                    text = message.text if message.text else ""
+                    caption = message.caption if message.caption else ""
+                    content = (text + " " + caption).lower()
+                    
+                    # Verificar si coincide con el nombre buscado
+                    if name_lower in content:
+                        found_posts.append({
+                            'id': msg_id, 
+                            'message_id': msg_id,
+                            'chat_id': SEARCH_CHANNEL_ID,
+                            'content': content[:100] + "..." if len(content) > 100 else content
+                        })
+                    
+                    # Eliminar la copia temporal
+                    await context.bot.delete_message(
+                        chat_id=ADMIN_IDS[0],
+                        message_id=message.message_id
+                    )
+                    
+                except Exception as e:
+                    # Simplemente continuar si hay error con un mensaje
+                    continue
+                
+                # Si encontramos suficientes posts, salir
+                if len(found_posts) >= 10:  # Limitar a 10 resultados
+                    break
+            
+            # Si encontramos suficientes posts, salir del bucle exterior
+            if len(found_posts) >= 10:
+                break
+            
+            # Pequeña pausa para evitar rate limiting
+            await asyncio.sleep(0.5)
+    
+    except Exception as e:
+        logger.error(f"Error en search_posts_by_name: {e}")
+    
+    return found_posts
+
+# Manejador para el callback de selección de post
+async def handle_post_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manejar la selección de un post específico"""
+    query = update.callback_query
+    user = query.from_user
+    
+    # Verificar que el usuario es administrador
+    if user.id not in ADMIN_IDS:
+        await query.answer("⚠️ Solo administradores pueden usar esta función.")
+        return
+    
+    # Verificar que estamos en modo carga masiva
+    load_state = context.bot_data.get('load_state', LOAD_STATE_INACTIVE)
+    if load_state == LOAD_STATE_INACTIVE:
+        await query.answer("⚠️ El modo de carga masiva no está activo.")
+        return
+    
+    # Extraer post_id del callback data
+    # Formato: select_post_ID_INDEX
+    parts = query.data.split('_')
+    if len(parts) < 4:
+        await query.answer("❌ Formato de datos inválido.")
+        return
+    
+    try:
+        post_id = int(parts[2])
+        index = int(parts[3])
+        
+        # Guardar el post seleccionado en el contenido actual
+        current_content = context.bot_data.get('current_content', {})
+        current_content['selected_post'] = {
+            'id': post_id,
+            'message_id': post_id,
+            'chat_id': SEARCH_CHANNEL_ID
+        }
+        
+        # Cambiar estado a esperar archivos
+        context.bot_data['load_state'] = LOAD_STATE_WAITING_FILES
+        
+        # Actualizar el teclado para marcar este post como seleccionado
+        new_keyboard = [[InlineKeyboardButton("✅ Post seleccionado", callback_data="post_already_selected")]]
+        await query.edit_message_reply_markup(reply_markup=InlineKeyboardMarkup(new_keyboard))
+        
+        # Informar al administrador
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=f"<blockquote>✅ Has seleccionado el post #{index+1}.\n"
+                 f"Ahora puedes enviar los archivos relacionados con este contenido.</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        
+        # Actualizar mensaje de estado
+        await update_load_status_message(update, context)
+        
+    except (ValueError, IndexError) as e:
+        logger.error(f"Error procesando selección de post: {e}")
+        await query.answer("❌ Error al seleccionar el post.")
 
 async def handle_load_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manejar la recepción de archivos durante el modo de carga masiva"""
@@ -7012,6 +7146,7 @@ async def send_keepalive_message(context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error sending keepalive message: {e}")
 
 # Mantener el servidor Flask activo
+
 def main() -> None:
     """Start the bot."""
     # Create the Application
@@ -7063,6 +7198,7 @@ def main() -> None:
     
     # Add callback query handler
     application.add_handler(CallbackQueryHandler(handle_callback_query))
+    application.add_handler(CallbackQueryHandler(handle_post_selection, pattern=r"^select_post_"))
 
     # Handlers organizados por prioridad (grupos)
     # Grupo -12: Handlers para el comando ser (mayor prioridad)
