@@ -3474,30 +3474,32 @@ async def finalize_current_content(update, context):
         # Obtener información de IMDb
         imdb_info = current_content.get('imdb_info', {})
         
-        # Determinar el tipo de contenido (con cita)
+        # Determinar el tipo de contenido (siempre primero y con cita)
         content_type_header = "<blockquote>Serie 🎥</blockquote>" if current_content['content_type'] == 'series' else "<blockquote>Película 🎬</blockquote>"
         
         # Determinar el tipo de contenido y estado para series
         content_type_info = ""
         if 'content_type' in imdb_info and imdb_info.get('is_series', False):
             content_type_info += f"📺 <b>Estado:</b> {imdb_info.get('series_status', 'Desconocido')}\n"
-            content_type_info += f"🔢 {imdb_info.get('total_episodes', 'Número desconocido')} episodios en {imdb_info.get('total_seasons', 'número desconocido')} temporadas\n"
+            episodes = imdb_info.get('total_episodes', 'Número desconocido')
+            seasons = imdb_info.get('total_seasons', 'número desconocido')
+            content_type_info += f"🔢 {episodes} episodios en {seasons} temporadas\n"
         
         # Crear descripción para el post
         if imdb_info:
-            spanish_title = imdb_info.get('title', current_content['title'])
-            english_title = imdb_info.get('original_title', spanish_title)
+            # Obtener títulos en inglés y español
+            english_title = imdb_info.get('original_title', current_content['title'])
+            spanish_title = imdb_info.get('spanish_title', '') or imdb_info.get('title', '')
             
-            # Formatear títulos (nombre en inglés y español)
-            title_section = (
-                f"<b>{english_title}</b> ✓  <i>Nombre en inglés</i>\n"
-                f"<b>{spanish_title}</b> ✓  <i>Nombre en español</i>\n\n"
-            ) if spanish_title.lower() != english_title.lower() else f"<b>{spanish_title}</b> ✓\n\n"
+            # Formatear la sección de títulos
+            title_section = f"<b>{english_title}</b> ✓ <i>Nombre en inglés</i>\n"
+            if spanish_title and spanish_title.lower() != english_title.lower():
+                title_section += f"<b>{spanish_title}</b> ✓ <i>Nombre en español</i>\n"
             
-            # Crear descripción con la nueva estructura
+            # Crear la descripción completa
             description = (
                 f"{content_type_header}\n"
-                f"{title_section}"
+                f"{title_section}\n"
                 f"📅 <b>Año:</b> {imdb_info.get('year', 'N/A')}\n"
                 f"⭐ <b>Calificación:</b> {imdb_info.get('rating', 'N/A')}/10\n"
                 f"{content_type_info}"
@@ -3505,23 +3507,23 @@ async def finalize_current_content(update, context):
                 f"🎬 <b>Director:</b> {imdb_info.get('directors', 'No disponible')}\n"
                 f"👥 <b>Reparto:</b> {imdb_info.get('cast', 'No disponible')}\n\n"
                 f"📝 <b>Sinopsis:</b>\n"
-                f"<blockquote expandable>{imdb_info.get('plot', 'No disponible')}</blockquote>\n\n"
+                f"<blockquote expandable>{imdb_info.get('plot', 'No disponible')}</blockquote>\n"
+                f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
             )
         else:
+            # Si no hay información de IMDb, usar el título simple
             title = current_content.get('title', 'Sin título')
             description = (
                 f"{content_type_header}\n"
                 f"<b>{title}</b> ✓\n\n"
-                f"<blockquote>No se encontró información adicional para este contenido.</blockquote>\n\n"
+                f"<blockquote>No se encontró información adicional para este contenido.</blockquote>\n"
+                f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
             )
-        
-        # Agregar marca de agua al final (una sola vez)
-        description += f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
         
         # Truncar la descripción si es muy larga
         description = truncate_description(description)
         
-        # El resto del código permanece igual
+        # Descargar póster si está disponible
         cover_photo = None
         
         if imdb_info and imdb_info.get('poster_url'):
