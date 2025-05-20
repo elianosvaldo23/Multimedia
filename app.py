@@ -1920,30 +1920,67 @@ async def finalize_multi_seasons_upload(update: Update, context: ContextTypes.DE
         series_id = int(time.time())
         
         # 2. Formatear la descripción adecuadamente
-        if not description.startswith("<b>"):
-            description = f"<b>{series_name}</b>\n\n{description}"
-        
-        # Si la descripción no incluye una sinopsis expandible, añadirla
-        if "<blockquote expandable>" not in description and "📝 <b>Sinopsis:</b>" not in description:
-            # Extraer o crear una sinopsis básica
-            synopsis = "Información no disponible"
-            if "Sinopsis:" in description:
+        content_type_header = "<blockquote>Serie 🎥</blockquote>\n"
+
+        # Verificar si hay información que procesar
+        if not description:
+            # Crear una descripción básica con el nombre de la serie
+            description = f"{content_type_header}{series_name} ✓\n\n"
+            description += f"📝 Sinopsis:\n<blockquote expandable>Información no disponible</blockquote>\n\n"
+            description += f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
+        else:
+            # Si ya hay una descripción, asegurarse de que siga el formato correcto
+            if content_type_header not in description:
+                # Extraer el título si existe o usar el nombre de la serie
+                title_match = re.search(r'<b>(.*?)</b>', description)
+                title = title_match.group(1) if title_match else series_name
+                
+                # Reconstruir la descripción con el formato correcto
+                english_title = ""
+                if "original_title" in description or "Nombre en inglés" in description:
+                    english_match = re.search(r'Nombre en inglés (.*?)✓', description)
+                    if english_match:
+                        english_title = f"Nombre en inglés {english_match.group(1)}✓\n"
+                
+                # Extraer la sinopsis si existe
+                synopsis = "Información no disponible"
                 synopsis_match = re.search(r'Sinopsis:(.*?)(?:\n\n|\Z)', description, re.DOTALL)
                 if synopsis_match:
                     synopsis = synopsis_match.group(1).strip()
-            
-            # Reformatear la descripción
-            if "📝 <b>Sinopsis:</b>" not in description:
-                description = re.sub(
-                    r'Sinopsis:(.*?)(?:\n\n|\Z)', 
-                    r'📝 <b>Sinopsis:</b>\n<blockquote expandable>\1</blockquote>\n\n', 
-                    description, 
-                    flags=re.DOTALL
+                
+                # Reconstruir la descripción completamente
+                new_description = (
+                    f"{content_type_header}"
+                    f"{title} ✓\n"
+                    f"{english_title}\n"
                 )
-            
-            # Asegurar que hay una marca de agua del canal
-            if "Multimedia-TV 📺" not in description:
-                description += f"\n\n🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
+                
+                # Copiar el resto de la información (año, calificación, etc.)
+                fields = [
+                    ('📅 Año:', r'📅 Año: (.*?)(?:\n)'),
+                    ('⭐ Calificación:', r'⭐ Calificación: (.*?)(?:\n)'),
+                    ('🎭 Género:', r'🎭 Género: (.*?)(?:\n)'),
+                    ('🎬 Director:', r'🎬 Director: (.*?)(?:\n)'),
+                    ('👥 Reparto:', r'👥 Reparto: (.*?)(?:\n)'),
+                    ('📺 Estado:', r'📺 Estado: (.*?)(?:\n)'),
+                    ('🔢', r'🔢 (.*?)(?:\n)')
+                ]
+                
+                for prefix, pattern in fields:
+                    match = re.search(pattern, description)
+                    if match:
+                        if prefix == '🔢':
+                            new_description += f"🔢 {match.group(1)}\n"
+                        else:
+                            new_description += f"{prefix} {match.group(1)}\n"
+                
+                # Añadir la sinopsis en formato expandible
+                new_description += f"\n📝 Sinopsis:\n<blockquote expandable>{synopsis}</blockquote>\n\n"
+                
+                # Añadir la marca de agua
+                new_description += f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
+                
+                description = new_description
         
         # 3. Subir la portada al canal de búsqueda
         await status_message.edit_text(
@@ -3474,51 +3511,65 @@ async def finalize_current_content(update, context):
         # Obtener información de IMDb
         imdb_info = current_content.get('imdb_info', {})
         
-        # Determinar el tipo de contenido (siempre primero y con cita)
-        content_type_header = "<blockquote>Serie 🎥</blockquote>" if current_content['content_type'] == 'series' else "<blockquote>Película 🎬</blockquote>"
+        # Determinar el tipo de contenido
+        content_type_header = "<blockquote>Serie 🎬</blockquote>\n" if current_content['content_type'] == 'series' else "<blockquote>Película 🍿</blockquote>\n"
         
-        # Determinar el tipo de contenido y estado para series
-        content_type_info = ""
-        if 'content_type' in imdb_info and imdb_info.get('is_series', False):
-            content_type_info += f"📺 <b>Estado:</b> {imdb_info.get('series_status', 'Desconocido')}\n"
-            episodes = imdb_info.get('total_episodes', 'Número desconocido')
-            seasons = imdb_info.get('total_seasons', 'número desconocido')
-            content_type_info += f"🔢 {episodes} episodios en {seasons} temporadas\n"
-        
-        # Crear descripción para el post
+        # Crear descripción según la información disponible
         if imdb_info:
-            # Obtener títulos en inglés y español
-            english_title = imdb_info.get('original_title', current_content['title'])
-            spanish_title = imdb_info.get('spanish_title', '') or imdb_info.get('title', '')
+            # Obtener títulos en español e inglés
+            spanish_title = imdb_info.get('title', current_content['title'])
+            english_title = imdb_info.get('original_title', spanish_title)
             
-            # Formatear la sección de títulos
-            title_section = f"<b>{english_title}</b> ✓ <i>Nombre en inglés</i>\n"
-            if spanish_title and spanish_title.lower() != english_title.lower():
-                title_section += f"<b>{spanish_title}</b> ✓ <i>Nombre en español</i>\n"
+            # Evitar repetición si los títulos son idénticos
+            english_title_display = f"Nombre en inglés {english_title} ✓\n" if spanish_title.lower() != english_title.lower() else ""
             
-            # Crear la descripción completa
+            # Determinar información adicional para series
+            content_type_info = ""
+            if current_content['content_type'] == 'series':
+                status_map = {
+                    'Returning Series': 'En emisión',
+                    'Ended': 'Finalizada',
+                    'Canceled': 'Cancelada'
+                }
+                series_status = status_map.get(imdb_info.get('status'), 'Desconocido')
+                episodes_info = imdb_info.get('total_episodes', '?')
+                seasons_info = imdb_info.get('number_of_seasons', '?')
+                content_type_info = f"📺 Estado: {series_status}\n🔢 {episodes_info} episodios en {seasons_info} temporadas\n"
+            
+            # Construir la descripción completa
             description = (
-                f"{content_type_header}\n"
-                f"{title_section}\n"
-                f"📅 <b>Año:</b> {imdb_info.get('year', 'N/A')}\n"
-                f"⭐ <b>Calificación:</b> {imdb_info.get('rating', 'N/A')}/10\n"
+                f"{content_type_header}"
+                f"{spanish_title} ✓\n"
+                f"{english_title_display}\n"
+                f"📅 Año: {imdb_info.get('year', 'N/A')}\n"
+                f"⭐ Calificación: {imdb_info.get('rating', 'N/A')}/10\n"
                 f"{content_type_info}"
-                f"🎭 <b>Género:</b> {imdb_info.get('genres', 'No disponible')}\n"
-                f"🎬 <b>Director:</b> {imdb_info.get('directors', 'No disponible')}\n"
-                f"👥 <b>Reparto:</b> {imdb_info.get('cast', 'No disponible')}\n\n"
-                f"📝 <b>Sinopsis:</b>\n"
-                f"<blockquote expandable>{imdb_info.get('plot', 'No disponible')}</blockquote>\n"
+                f"🎭 Género: {imdb_info.get('genres', 'No disponible')}\n"
+                f"🎬 Director: {imdb_info.get('directors', 'No disponible')}\n"
+                f"👥 Reparto: {imdb_info.get('cast', 'No disponible')}\n\n"
+                f"📝 Sinopsis:\n<blockquote expandable>{imdb_info.get('plot', 'No disponible')}</blockquote>\n\n"
                 f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
             )
         else:
-            # Si no hay información de IMDb, usar el título simple
-            title = current_content.get('title', 'Sin título')
+            # Crear descripción básica si no hay información de IMDb
             description = (
-                f"{content_type_header}\n"
-                f"<b>{title}</b> ✓\n\n"
-                f"<blockquote>No se encontró información adicional para este contenido.</blockquote>\n"
+                f"{content_type_header}"
+                f"{current_content.get('title', 'Sin título')} ✓\n\n"
+                f"📝 Sinopsis:\n<blockquote expandable>No se encontró información adicional para este contenido.</blockquote>\n\n"
                 f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
             )
+        else:
+            title = current_content.get('title', 'Sin título')
+            description = (
+                f"{content_type_header}"
+                f"<b>{title}</b> ✓\n\n"
+                f"<blockquote>No se encontró información adicional para este contenido.</blockquote>\n\n"
+                f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
+            )
+        
+        # Asegurar que la marca de agua esté presente
+        if "Multimedia-TV 📺" not in description:
+            description += f"\n\n🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
         
         # Truncar la descripción si es muy larga
         description = truncate_description(description)
@@ -6495,19 +6546,26 @@ async def finalize_series_upload(update: Update, context: ContextTypes.DEFAULT_T
         if not description and imdb_info:
             # Determinar tipo de contenido
             content_type_header = "<blockquote>Serie 🎥</blockquote>\n" if media_type == 'tv' else "<blockquote>Película 🍿</blockquote>\n"
-            
+
+            # Obtener títulos en español e inglés
+            spanish_title = imdb_info.get('title', title)
+            english_title = imdb_info.get('original_title', spanish_title)
+
+            # Evitar repetición si los títulos son idénticos
+            english_title_display = f"Nombre en inglés {english_title} ✓\n" if spanish_title.lower() != english_title.lower() else ""
+
             # Crear descripción con el formato correcto
             description = (
-                f"{content_type_header}"  # Tipo de contenido primero y en blockquote
-                f"<b>{imdb_info['title']}</b> ✓\n"  # Título en español
-                f"<b>{imdb_info.get('original_title', imdb_info['title'])}</b> ✓\n\n"  # Título en inglés
+                f"{content_type_header}"
+                f"{spanish_title} ✓\n"
+                f"{english_title_display}\n"
                 f"📅 Año: {imdb_info.get('year', 'N/A')}\n"
                 f"⭐ Calificación: {imdb_info.get('rating', 'N/A')}/10\n"
                 f"🎭 Género: {imdb_info.get('genres', 'No disponible')}\n"
                 f"🎬 Director: {imdb_info.get('directors', 'No disponible')}\n"
                 f"👥 Reparto: {imdb_info.get('cast', 'No disponible')}"
             )
-            
+
             # Agregar información adicional para series
             if media_type == 'tv':
                 status_map = {
@@ -6519,13 +6577,13 @@ async def finalize_series_upload(update: Update, context: ContextTypes.DEFAULT_T
                 num_seasons = imdb_info.get('number_of_seasons', '?')
                 num_episodes = imdb_info.get('number_of_episodes', '?')
                 description += f"\n📺 Estado: {series_status}\n🔢 {num_episodes} episodios en {num_seasons} temporadas"
-            
+
             # Agregar sinopsis en formato de cita expandible
             description += (
                 f"\n\n📝 Sinopsis:\n"
-                f"<blockquote expandable>{imdb_info.get('plot', 'No disponible')}</blockquote>"
+                f"<blockquote expandable>{imdb_info.get('plot', 'No disponible')}</blockquote>\n\n"
             )
-            
+
             # Agregar marca de agua con enlace
             description += f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
         else:
@@ -6533,8 +6591,8 @@ async def finalize_series_upload(update: Update, context: ContextTypes.DEFAULT_T
             content_type_header = "<blockquote>Serie 🎥</blockquote>\n" if media_type == 'tv' else "<blockquote>Película 🍿</blockquote>\n"
             description = (
                 f"{content_type_header}"
-                f"<b>{title}</b> ✓\n\n"
-                f"<blockquote>No se encontró información adicional para este contenido.</blockquote>\n\n"
+                f"{title} ✓\n\n"
+                f"📝 Sinopsis:\n<blockquote expandable>No se encontró información adicional para este contenido.</blockquote>\n\n"
                 f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
             )
         
