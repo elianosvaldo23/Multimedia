@@ -1940,7 +1940,7 @@ async def finalize_multi_seasons_upload(update: Update, context: ContextTypes.DE
                 if "original_title" in description or "Nombre en inglés" in description:
                     english_match = re.search(r'Nombre en inglés (.*?)✓', description)
                     if english_match:
-                        english_title = f"Nombre en inglés {english_match.group(1)}✓\n"
+                        english_title = f"{english_match.group(1)}✓\n"
                 
                 # Extraer la sinopsis si existe
                 synopsis = "Información no disponible"
@@ -3521,7 +3521,7 @@ async def finalize_current_content(update, context):
             english_title = imdb_info.get('original_title', spanish_title)
             
             # Evitar repetición si los títulos son idénticos
-            english_title_display = f"Nombre en inglés {english_title} ✓\n" if spanish_title.lower() != english_title.lower() else ""
+            english_title_display = f"{english_title} ✓\n" if spanish_title.lower() != english_title.lower() else ""
             
             # Determinar información adicional para series
             content_type_info = ""
@@ -4718,26 +4718,34 @@ async def send_search_results(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
     
     if results:
-        # Create a message with buttons for each match
+        # Crear mensaje con botones para cada resultado
         keyboard = []
         for i, match in enumerate(results):
             media_icon = "🎬" if match['has_media'] else "📝"
-            keyboard.append([
+            
+            # Generar URL para el botón "Ver ahora"
+            view_url = f"https://t.me/MultimediaTVbot?start=content_{match['id']}"
+            
+            # Crear dos botones por fila: uno para mostrar info y otro para "Ver ahora"
+            row = [
                 InlineKeyboardButton(
                     f"{i+1}. {media_icon} {match['preview']}",
-                    callback_data=f"send_{match['id']}"
+                    callback_data=f"preview_{match['id']}"
+                ),
+                InlineKeyboardButton(
+                    "Ver ahora 🔍",
+                    url=view_url
                 )
-            ])
+            ]
+            keyboard.append(row)
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        # Crear mensaje base
         message_text = (
             f"✅ Encontré {len(results)} resultados para '<b>{query}</b>'.\n\n"
-            f"Selecciona uno para verlo:"
+            f"Selecciona uno para ver la información o usa el botón 'Ver ahora' para acceder directamente:"
         )
         
-        # Añadir footer si existe
         if footer_text:
             message_text += footer_text
         
@@ -4765,6 +4773,46 @@ async def send_search_results(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"Selecciona el tipo y haz clic en 'Hacer pedido'.",
             reply_markup=reply_markup
         )
+
+async def handle_preview_callback(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE):
+    """Maneja la previsualización de contenido cuando se hace clic en el botón de info"""
+    try:
+        # Extraer el ID del mensaje original
+        msg_id = int(query.data.replace("preview_", ""))
+        
+        # Obtener el mensaje original del canal de búsqueda
+        try:
+            message = await context.bot.copy_message(
+                chat_id=query.message.chat_id,
+                from_chat_id=SEARCH_CHANNEL_ID,
+                message_id=msg_id,
+                disable_notification=True
+            )
+            
+            # Generar URL para el botón "Ver ahora"
+            view_url = f"https://t.me/MultimediaTVbot?start=content_{msg_id}"
+            
+            # Crear botón
+            keyboard = [[InlineKeyboardButton("Ver ahora 🔍", url=view_url)]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            # Si es una foto o tiene descripción, editar el mensaje con el botón
+            if message.photo or message.caption:
+                await context.bot.edit_message_reply_markup(
+                    chat_id=query.message.chat_id,
+                    message_id=message.message_id,
+                    reply_markup=reply_markup
+                )
+            
+            await query.answer("Previsualización mostrada")
+            
+        except Exception as e:
+            logger.error(f"Error mostrando previsualización: {e}")
+            await query.answer("No se pudo mostrar la previsualización")
+            
+    except Exception as e:
+        logger.error(f"Error en handle_preview_callback: {e}")
+        await query.answer("Error procesando la solicitud")
 
 async def clear_cache_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin command to manually clear the search cache"""
@@ -6544,7 +6592,7 @@ async def finalize_series_upload(update: Update, context: ContextTypes.DEFAULT_T
             english_title = imdb_info.get('original_title', spanish_title)
 
             # Evitar repetición si los títulos son idénticos
-            english_title_display = f"Nombre en inglés {english_title} ✓\n" if spanish_title.lower() != english_title.lower() else ""
+            english_title_display = f"{english_title} ✓\n" if spanish_title.lower() != english_title.lower() else ""
 
             # Crear descripción con el formato correcto
             description = (
@@ -6971,6 +7019,8 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         await handle_payment_method(update, context)
     elif data.startswith("req_"):
         await handle_request_type(update, context)
+    elif data.startswith("preview_"):
+        await handle_preview_callback(query, context)        
     elif data == "make_request":
         await handle_make_request(update, context)
     elif data.startswith("accept_req_"):
