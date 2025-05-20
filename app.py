@@ -4775,12 +4775,12 @@ async def send_search_results(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
 
 async def handle_preview_callback(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE):
-    """Maneja la previsualización de contenido cuando se hace clic en el botón de info"""
+    """Handle preview button clicks in search results"""
     try:
-        # Extraer el ID del mensaje original
+        # Extract the original message ID
         msg_id = int(query.data.replace("preview_", ""))
         
-        # Obtener el mensaje original del canal de búsqueda
+        # Get the original message from search channel
         try:
             message = await context.bot.copy_message(
                 chat_id=query.message.chat_id,
@@ -4789,14 +4789,14 @@ async def handle_preview_callback(query: CallbackQuery, context: ContextTypes.DE
                 disable_notification=True
             )
             
-            # Generar URL para el botón "Ver ahora"
+            # Generate URL for "Ver ahora" button
             view_url = f"https://t.me/MultimediaTVbot?start=content_{msg_id}"
             
-            # Crear botón
+            # Create button
             keyboard = [[InlineKeyboardButton("Ver ahora 🔍", url=view_url)]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            # Si es una foto o tiene descripción, editar el mensaje con el botón
+            # If it's a photo or has caption, edit the message to add button
             if message.photo or message.caption:
                 await context.bot.edit_message_reply_markup(
                     chat_id=query.message.chat_id,
@@ -6870,6 +6870,10 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
     query = update.callback_query
     data = query.data
     
+    if data.startswith("preview_"):
+        await handle_preview_callback(query, context)
+        return
+        
     # Manejar callback de verificación de membresía
     if data == "verify_membership":
         await verify_channel_membership(update, context)
