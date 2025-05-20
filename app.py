@@ -4792,11 +4792,11 @@ async def send_search_results(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def handle_preview_callback(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE):
     """Handle preview button clicks in search results"""
     try:
-        # Extract the original message ID
+        # Obtener el ID del mensaje original
         msg_id = int(query.data.replace("preview_", ""))
         
-        # Get the original message from search channel
         try:
+            # Primero enviar el mensaje original del canal de búsqueda
             message = await context.bot.copy_message(
                 chat_id=query.message.chat_id,
                 from_chat_id=SEARCH_CHANNEL_ID,
@@ -4804,20 +4804,26 @@ async def handle_preview_callback(query: CallbackQuery, context: ContextTypes.DE
                 disable_notification=True
             )
             
-            # Generate URL for "Ver ahora" button
+            # Crear mensaje adicional con el botón "Ver ahora"
             view_url = f"https://t.me/MultimediaTVbot?start=content_{msg_id}"
-            
-            # Create button
-            keyboard = [[InlineKeyboardButton("Ver ahora 🔍", url=view_url)]]
+            keyboard = [
+                [InlineKeyboardButton("🔗 Compartir", url=f"https://t.me/share/url?url={view_url}&text=¡Mira este contenido en MultimediaTV!")]
+            ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            # If it's a photo or has caption, edit the message to add button
-            if message.photo or message.caption:
-                await context.bot.edit_message_reply_markup(
-                    chat_id=query.message.chat_id,
-                    message_id=message.message_id,
-                    reply_markup=reply_markup
-                )
+            # Enviar mensaje con información adicional y botón de compartir
+            await context.bot.send_message(
+                chat_id=query.message.chat_id,
+                text="📌 Muchas gracias por Preferirnos\n"
+                     "<blockquote expandable>En caso de que no puedas reenviar ni guardar el archivo en tu teléfono, "
+                     "quiere decir que no tienes un plan comprado. Por lo cual te recomiendo "
+                     "que adquieras los planes Medio o Ultra que le dan estas posibilidades.</blockquote>\n\n"
+                     "◈ Nota\n"
+                     "<blockquote>Adquiere un Plan y disfruta de todas las opciones</blockquote>\n\n"
+                     "Comparte con tus familiares y amigos el contenido anterior ☝️",
+                reply_markup=reply_markup,
+                parse_mode=ParseMode.HTML
+            )
             
             await query.answer("Previsualización mostrada")
             
