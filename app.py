@@ -3558,14 +3558,6 @@ async def finalize_current_content(update, context):
                 f"📝 Sinopsis:\n<blockquote expandable>No se encontró información adicional para este contenido.</blockquote>\n\n"
                 f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
             )
-        else:
-            title = current_content.get('title', 'Sin título')
-            description = (
-                f"{content_type_header}"
-                f"<b>{title}</b> ✓\n\n"
-                f"<blockquote>No se encontró información adicional para este contenido.</blockquote>\n\n"
-                f"🔗 <a href='https://t.me/multimediatvOficial'>Multimedia-TV 📺</a>"
-            )
         
         # Asegurar que la marca de agua esté presente
         if "Multimedia-TV 📺" not in description:
