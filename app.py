@@ -5,10 +5,28 @@ import aiohttp
 import time
 import requests
 from datetime import datetime, timedelta
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler
-from telegram.constants import ParseMode, ChatAction
+# Telegram imports
+from telegram import (
+    Update, 
+    InlineKeyboardButton, 
+    InlineKeyboardMarkup, 
+    CallbackQuery
+)
+from telegram.constants import (
+    ParseMode,
+    ChatAction
+)
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    filters,
+    ContextTypes,
+    CallbackQueryHandler,
+    PicklePersistence
+)
 from telegram.error import TelegramError
+# Other imports remain the same
 from database import Database
 from plans import PLANS
 from flask import Flask
@@ -23,11 +41,8 @@ import traceback
 import yt_dlp
 from pathlib import Path
 from urllib.parse import urlparse
-from telegram.ext import PicklePersistence
 import signal
 import sys
-from telegram.ext import filters
-from telegram.constants import ChatType
 from deep_translator import GoogleTranslator
 
 def handle_exit(signum, frame):
