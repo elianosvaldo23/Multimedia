@@ -4849,9 +4849,12 @@ async def handle_send_callback(query, context, msg_id):
             if series_info:
                 # Es un mensaje de portada de serie
                 series_id = series_info['series_id']
+                
+                # Usar la misma URL que se usa en los canales
+                # Esto hace que el botón apunte a la interfaz de serie completa
                 view_url = f"https://t.me/MultimediaTVbot?start=series_{series_id}"
 
-                # Copiar mensaje con botón "Ver ahora"
+                # Copiar mensaje
                 message = await context.bot.copy_message(
                     chat_id=query.message.chat_id,
                     from_chat_id=SEARCH_CHANNEL_ID,
@@ -4859,7 +4862,7 @@ async def handle_send_callback(query, context, msg_id):
                     protect_content=not can_forward
                 )
 
-                # Agregar el botón "Ver ahora"
+                # Agregar el botón "Ver ahora" con la URL correcta
                 keyboard = [
                     [InlineKeyboardButton("Ver ahora", url=view_url)]
                 ]
@@ -4885,6 +4888,8 @@ async def handle_send_callback(query, context, msg_id):
                 if episode_info:
                     # Es un episodio, obtener la serie
                     series_id = episode_info['series_id']
+                    
+                    # URL para ver toda la serie, igual que en los canales
                     view_url = f"https://t.me/MultimediaTVbot?start=series_{series_id}"
 
                     # Enviar el episodio
@@ -4895,9 +4900,9 @@ async def handle_send_callback(query, context, msg_id):
                         protect_content=not can_forward
                     )
                     
-                    # Agregar el botón "Ver ahora" al episodio
+                    # Agregar el botón "Ver ahora" al episodio, que lleva a la serie completa
                     keyboard = [
-                        [InlineKeyboardButton("Ver ahora", url=view_url)]
+                        [InlineKeyboardButton("Ver serie completa", url=view_url)]
                     ]
                     reply_markup = InlineKeyboardMarkup(keyboard)
                     
@@ -4909,26 +4914,14 @@ async def handle_send_callback(query, context, msg_id):
                             reply_markup=reply_markup
                         )
                     except Exception as e:
-                        logger.error(f"Error añadiendo botón 'Ver ahora' al episodio: {e}")
-
-                    # Enviar mensaje adicional con el botón para ver toda la serie
-                    keyboard = [
-                        [InlineKeyboardButton("Ver serie completa", url=view_url)]
-                    ]
-                    reply_markup = InlineKeyboardMarkup(keyboard)
-
-                    await context.bot.send_message(
-                        chat_id=query.message.chat_id,
-                        text="<blockquote>✅ Para ver todos los episodios de esta serie, usa el botón:</blockquote>",
-                        reply_markup=reply_markup,
-                        parse_mode=ParseMode.HTML
-                    )
+                        logger.error(f"Error añadiendo botón 'Ver serie completa' al episodio: {e}")
 
                     # Enviar mensaje adicional
                     await send_additional_messages(context, query.message.chat_id, msg_id, can_forward)
 
                 else:
                     # Es contenido normal (película u otro)
+                    # URL para acceder directamente al contenido, igual que en los canales
                     view_url = f"https://t.me/MultimediaTVbot?start=content_{msg_id}"
 
                     # Copiar mensaje
@@ -4939,7 +4932,7 @@ async def handle_send_callback(query, context, msg_id):
                         protect_content=not can_forward
                     )
                     
-                    # Agregar el botón "Ver ahora" al mensaje
+                    # Agregar el botón "Ver ahora" al mensaje con la URL correcta
                     keyboard = [
                         [InlineKeyboardButton("Ver ahora", url=view_url)]
                     ]
