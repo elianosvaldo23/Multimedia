@@ -4850,9 +4850,34 @@ async def handle_send_callback(query, context, msg_id):
                 # Es un mensaje de portada de serie
                 series_id = series_info['series_id']
                 
-                # Usar la misma URL que se usa en los canales
-                # Esto hace que el botón apunte a la interfaz de serie completa
-                view_url = f"https://t.me/MultimediaTVbot?start=series_{series_id}"
+                # Obtener el mensaje original del canal para extraer el botón exacto
+                try:
+                    # Intentamos obtener el mensaje original
+                    original_message = None
+                    
+                    # Intentar obtener del canal SEARCH_CHANNEL_ID
+                    try:
+                        original_message = await context.bot.forward_message(
+                            chat_id=context.bot.id,  # Forward al mismo bot temporalmente
+                            from_chat_id=SEARCH_CHANNEL_ID,
+                            message_id=msg_id,
+                            disable_notification=True
+                        )
+                        # Borrar el mensaje temporal
+                        await context.bot.delete_message(
+                            chat_id=context.bot.id,
+                            message_id=original_message.message_id
+                        )
+                    except Exception as forward_error:
+                        logger.error(f"Error obteniendo mensaje original: {forward_error}")
+                
+                    # URL para el botón de serie
+                    view_url = f"https://t.me/MultimediaTVbot?start=series_{series_id}"
+                    
+                except Exception as e:
+                    logger.error(f"Error obteniendo mensaje original: {e}")
+                    # Si falla, usar la URL estándar
+                    view_url = f"https://t.me/MultimediaTVbot?start=series_{series_id}"
 
                 # Copiar mensaje
                 message = await context.bot.copy_message(
@@ -4889,7 +4914,7 @@ async def handle_send_callback(query, context, msg_id):
                     # Es un episodio, obtener la serie
                     series_id = episode_info['series_id']
                     
-                    # URL para ver toda la serie, igual que en los canales
+                    # URL para ver toda la serie
                     view_url = f"https://t.me/MultimediaTVbot?start=series_{series_id}"
 
                     # Enviar el episodio
@@ -4900,9 +4925,9 @@ async def handle_send_callback(query, context, msg_id):
                         protect_content=not can_forward
                     )
                     
-                    # Agregar el botón "Ver ahora" al episodio, que lleva a la serie completa
+                    # Agregar el botón "Ver ahora" que lleva a la serie completa
                     keyboard = [
-                        [InlineKeyboardButton("Ver serie completa", url=view_url)]
+                        [InlineKeyboardButton("Ver ahora", url=view_url)]
                     ]
                     reply_markup = InlineKeyboardMarkup(keyboard)
                     
@@ -4914,14 +4939,14 @@ async def handle_send_callback(query, context, msg_id):
                             reply_markup=reply_markup
                         )
                     except Exception as e:
-                        logger.error(f"Error añadiendo botón 'Ver serie completa' al episodio: {e}")
+                        logger.error(f"Error añadiendo botón 'Ver ahora' al episodio: {e}")
 
                     # Enviar mensaje adicional
                     await send_additional_messages(context, query.message.chat_id, msg_id, can_forward)
 
                 else:
                     # Es contenido normal (película u otro)
-                    # URL para acceder directamente al contenido, igual que en los canales
+                    # URL para acceder directamente al contenido
                     view_url = f"https://t.me/MultimediaTVbot?start=content_{msg_id}"
 
                     # Copiar mensaje
@@ -4932,7 +4957,7 @@ async def handle_send_callback(query, context, msg_id):
                         protect_content=not can_forward
                     )
                     
-                    # Agregar el botón "Ver ahora" al mensaje con la URL correcta
+                    # Agregar el botón "Ver ahora" con la URL correcta
                     keyboard = [
                         [InlineKeyboardButton("Ver ahora", url=view_url)]
                     ]
@@ -4987,6 +5012,7 @@ async def handle_send_callback(query, context, msg_id):
     except Exception as e:
         logger.error(f"Error handling send callback: {e}")
         await query.answer(f"Error: {str(e)[:200]}")
+
 
 async def handle_profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle profile button click with real-time limit information"""
