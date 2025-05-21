@@ -4739,7 +4739,7 @@ async def send_search_results(update: Update, context: ContextTypes.DEFAULT_TYPE
         for i, match in enumerate(results):
             media_icon = "🎬" if match['has_media'] else "📝"
             
-            # Crear un único botón para cada resultado
+            # Crear un único botón para cada resultado que disparará la previsualización
             row = [InlineKeyboardButton(
                 f"{i+1}. {media_icon} {match['preview']}",
                 callback_data=f"preview_{match['id']}"
@@ -4789,20 +4789,32 @@ async def handle_preview_callback(query: CallbackQuery, context: ContextTypes.DE
         msg_id = int(query.data.replace("preview_", ""))
         
         try:
-            # Generar URL para el botón "Ver ahora"
-            view_url = f"https://t.me/MultimediaTVbot?start=content_{msg_id}"
-            
-            # Crear botón "Ver ahora"
-            keyboard = [[InlineKeyboardButton("Ver ahora", url=view_url)]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            # Enviar el contenido con el botón "Ver ahora"
+            # Primero enviar el mensaje original del canal de búsqueda
             message = await context.bot.copy_message(
                 chat_id=query.message.chat_id,
                 from_chat_id=SEARCH_CHANNEL_ID,
                 message_id=msg_id,
-                reply_markup=reply_markup
+                disable_notification=True
             )
+            
+            # Generar URL para el botón "Ver ahora"
+            view_url = f"https://t.me/MultimediaTVbot?start=content_{msg_id}"
+            
+            # Crear botón "Ver ahora"
+            keyboard = [
+                [InlineKeyboardButton("Ver ahora", url=view_url)]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            # Editar el mensaje enviado para añadir el botón "Ver ahora"
+            try:
+                await context.bot.edit_message_reply_markup(
+                    chat_id=query.message.chat_id,
+                    message_id=message.message_id,
+                    reply_markup=reply_markup
+                )
+            except Exception as e:
+                logger.error(f"Error añadiendo botón Ver ahora: {e}")
             
             # Enviar mensaje adicional con el botón de compartir
             share_keyboard = [
