@@ -45,6 +45,7 @@ import signal
 import sys
 from deep_translator import GoogleTranslator
 
+
 def handle_exit(signum, frame):
     """Maneja señales de terminación"""
     print(f"Recibida señal de terminación {signum}. Saliendo...")
@@ -4733,34 +4734,26 @@ async def send_search_results(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
     
     if results:
-        # Crear mensaje con botones para cada resultado
+        # Create a message with buttons for each match
         keyboard = []
         for i, match in enumerate(results):
             media_icon = "🎬" if match['has_media'] else "📝"
-            
-            # Generar URL para el botón "Ver ahora"
-            view_url = f"https://t.me/MultimediaTVbot?start=content_{match['id']}"
-            
-            # Crear dos botones por fila: uno para mostrar info y otro para "Ver ahora"
-            row = [
+            keyboard.append([
                 InlineKeyboardButton(
                     f"{i+1}. {media_icon} {match['preview']}",
-                    callback_data=f"preview_{match['id']}"
-                ),
-                InlineKeyboardButton(
-                    "Ver ahora 🔍",
-                    url=view_url
+                    callback_data=f"send_{match['id']}"
                 )
-            ]
-            keyboard.append(row)
+            ])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         
+        # Crear mensaje base
         message_text = (
             f"✅ Encontré {len(results)} resultados para '<b>{query}</b>'.\n\n"
-            f"Selecciona uno para ver la información o usa el botón 'Ver ahora' para acceder directamente:"
+            f"Selecciona uno para verlo:"
         )
         
+        # Añadir footer si existe
         if footer_text:
             message_text += footer_text
         
@@ -4788,52 +4781,6 @@ async def send_search_results(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"Selecciona el tipo y haz clic en 'Hacer pedido'.",
             reply_markup=reply_markup
         )
-
-async def handle_preview_callback(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE):
-    """Handle preview button clicks in search results"""
-    try:
-        # Obtener el ID del mensaje original
-        msg_id = int(query.data.replace("preview_", ""))
-        
-        try:
-            # Primero enviar el mensaje original del canal de búsqueda
-            message = await context.bot.copy_message(
-                chat_id=query.message.chat_id,
-                from_chat_id=SEARCH_CHANNEL_ID,
-                message_id=msg_id,
-                disable_notification=True
-            )
-            
-            # Crear mensaje adicional con el botón "Ver ahora"
-            view_url = f"https://t.me/MultimediaTVbot?start=content_{msg_id}"
-            keyboard = [
-                [InlineKeyboardButton("🔗 Compartir", url=f"https://t.me/share/url?url={view_url}&text=¡Mira este contenido en MultimediaTV!")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            # Enviar mensaje con información adicional y botón de compartir
-            await context.bot.send_message(
-                chat_id=query.message.chat_id,
-                text="📌 Muchas gracias por Preferirnos\n"
-                     "<blockquote expandable>En caso de que no puedas reenviar ni guardar el archivo en tu teléfono, "
-                     "quiere decir que no tienes un plan comprado. Por lo cual te recomiendo "
-                     "que adquieras los planes Medio o Ultra que le dan estas posibilidades.</blockquote>\n\n"
-                     "◈ Nota\n"
-                     "<blockquote>Adquiere un Plan y disfruta de todas las opciones</blockquote>\n\n"
-                     "Comparte con tus familiares y amigos el contenido anterior ☝️",
-                reply_markup=reply_markup,
-                parse_mode=ParseMode.HTML
-            )
-            
-            await query.answer("Previsualización mostrada")
-            
-        except Exception as e:
-            logger.error(f"Error mostrando previsualización: {e}")
-            await query.answer("No se pudo mostrar la previsualización")
-            
-    except Exception as e:
-        logger.error(f"Error en handle_preview_callback: {e}")
-        await query.answer("Error procesando la solicitud")
 
 async def clear_cache_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin command to manually clear the search cache"""
@@ -6891,10 +6838,6 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
     query = update.callback_query
     data = query.data
     
-    if data.startswith("preview_"):
-        await handle_preview_callback(query, context)
-        return
-        
     # Manejar callback de verificación de membresía
     if data == "verify_membership":
         await verify_channel_membership(update, context)
@@ -7044,8 +6987,6 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         await handle_payment_method(update, context)
     elif data.startswith("req_"):
         await handle_request_type(update, context)
-    elif data.startswith("preview_"):
-        await handle_preview_callback(query, context)        
     elif data == "make_request":
         await handle_make_request(update, context)
     elif data.startswith("accept_req_"):
