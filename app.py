@@ -3146,13 +3146,13 @@ async def handle_preview_callback(query: CallbackQuery, context: ContextTypes.DE
             # Generar URL para el botón "Ver ahora"
             view_url = f"https://t.me/MultimediaTVbot?start=content_{msg_id}"
             
-            # Crear el botón que irá con el contenido
+            # Crear el botón "Ver ahora"
             keyboard = [
                 [InlineKeyboardButton("Ver ahora", url=view_url)]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            # Copiar el mensaje con el botón "Ver ahora"
+            # Copiar el mensaje original con el botón "Ver ahora"
             message = await context.bot.copy_message(
                 chat_id=query.message.chat_id,
                 from_chat_id=SEARCH_CHANNEL_ID,
@@ -3162,6 +3162,15 @@ async def handle_preview_callback(query: CallbackQuery, context: ContextTypes.DE
             )
             
             # Enviar mensaje adicional con el botón de compartir
+            share_keyboard = [
+                [InlineKeyboardButton(
+                    "🔗 Compartir", 
+                    url=f"https://t.me/share/url?url={view_url}&text=¡Mira este contenido en MultimediaTV!"
+                )]
+            ]
+            share_markup = InlineKeyboardMarkup(share_keyboard)
+            
+            # Enviar mensaje con información adicional
             await context.bot.send_message(
                 chat_id=query.message.chat_id,
                 text=(
@@ -3173,12 +3182,7 @@ async def handle_preview_callback(query: CallbackQuery, context: ContextTypes.DE
                     "<blockquote>Adquiere un Plan y disfruta de todas las opciones</blockquote>\n\n"
                     "Comparte con tus familiares y amigos el contenido anterior ☝️"
                 ),
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton(
-                        "🔗 Compartir",
-                        url=f"https://t.me/share/url?url={view_url}&text=¡Mira este contenido en MultimediaTV!"
-                    )]
-                ]),
+                reply_markup=share_markup,
                 parse_mode=ParseMode.HTML
             )
             
