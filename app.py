@@ -3143,41 +3143,25 @@ async def handle_preview_callback(query: CallbackQuery, context: ContextTypes.DE
         msg_id = int(query.data.replace("preview_", ""))
         
         try:
-            # Copiar el mensaje del canal de búsqueda
-            message = await context.bot.copy_message(
-                chat_id=query.message.chat_id,
-                from_chat_id=SEARCH_CHANNEL_ID,
-                message_id=msg_id,
-                disable_notification=True
-            )
-            
             # Generar URL para el botón "Ver ahora"
             view_url = f"https://t.me/MultimediaTVbot?start=content_{msg_id}"
             
-            # Crear los botones igual que en los canales
+            # Crear el botón que irá con el contenido
             keyboard = [
                 [InlineKeyboardButton("Ver ahora", url=view_url)]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            # Si el mensaje tiene una portada (es una serie o película con descripción),
-            # actualizar el mensaje con el botón
-            if hasattr(message, 'photo'):
-                await context.bot.edit_message_reply_markup(
-                    chat_id=query.message.chat_id,
-                    message_id=message.message_id,
-                    reply_markup=reply_markup
-                )
+            # Copiar el mensaje con el botón "Ver ahora"
+            message = await context.bot.copy_message(
+                chat_id=query.message.chat_id,
+                from_chat_id=SEARCH_CHANNEL_ID,
+                message_id=msg_id,
+                reply_markup=reply_markup,
+                disable_notification=True
+            )
             
             # Enviar mensaje adicional con el botón de compartir
-            share_keyboard = [
-                [InlineKeyboardButton(
-                    "🔗 Compartir",
-                    url=f"https://t.me/share/url?url={view_url}&text=¡Mira este contenido en MultimediaTV!"
-                )]
-            ]
-            share_markup = InlineKeyboardMarkup(share_keyboard)
-            
             await context.bot.send_message(
                 chat_id=query.message.chat_id,
                 text=(
@@ -3189,7 +3173,12 @@ async def handle_preview_callback(query: CallbackQuery, context: ContextTypes.DE
                     "<blockquote>Adquiere un Plan y disfruta de todas las opciones</blockquote>\n\n"
                     "Comparte con tus familiares y amigos el contenido anterior ☝️"
                 ),
-                reply_markup=share_markup,
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton(
+                        "🔗 Compartir",
+                        url=f"https://t.me/share/url?url={view_url}&text=¡Mira este contenido en MultimediaTV!"
+                    )]
+                ]),
                 parse_mode=ParseMode.HTML
             )
             
