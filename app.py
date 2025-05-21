@@ -4888,12 +4888,28 @@ async def handle_send_callback(query, context, msg_id):
                     view_url = f"https://t.me/MultimediaTVbot?start=series_{series_id}"
 
                     # Enviar el episodio
-                    await context.bot.copy_message(
+                    message = await context.bot.copy_message(
                         chat_id=query.message.chat_id,
                         from_chat_id=SEARCH_CHANNEL_ID,
                         message_id=msg_id,
                         protect_content=not can_forward
                     )
+                    
+                    # Agregar el botón "Ver ahora" al episodio
+                    keyboard = [
+                        [InlineKeyboardButton("Ver ahora", url=view_url)]
+                    ]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    
+                    try:
+                        # Editar el mensaje enviado para añadir el botón
+                        await context.bot.edit_message_reply_markup(
+                            chat_id=query.message.chat_id,
+                            message_id=message.message_id,
+                            reply_markup=reply_markup
+                        )
+                    except Exception as e:
+                        logger.error(f"Error añadiendo botón 'Ver ahora' al episodio: {e}")
 
                     # Enviar mensaje adicional con el botón para ver toda la serie
                     keyboard = [
@@ -4916,12 +4932,28 @@ async def handle_send_callback(query, context, msg_id):
                     view_url = f"https://t.me/MultimediaTVbot?start=content_{msg_id}"
 
                     # Copiar mensaje
-                    await context.bot.copy_message(
+                    message = await context.bot.copy_message(
                         chat_id=query.message.chat_id,
                         from_chat_id=SEARCH_CHANNEL_ID,
                         message_id=msg_id,
                         protect_content=not can_forward
                     )
+                    
+                    # Agregar el botón "Ver ahora" al mensaje
+                    keyboard = [
+                        [InlineKeyboardButton("Ver ahora", url=view_url)]
+                    ]
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    
+                    try:
+                        # Editar el mensaje enviado para añadir el botón
+                        await context.bot.edit_message_reply_markup(
+                            chat_id=query.message.chat_id,
+                            message_id=message.message_id,
+                            reply_markup=reply_markup
+                        )
+                    except Exception as e:
+                        logger.error(f"Error añadiendo botón 'Ver ahora' al contenido: {e}")
 
                     # Enviar mensaje adicional
                     await send_additional_messages(context, query.message.chat_id, msg_id, can_forward)
