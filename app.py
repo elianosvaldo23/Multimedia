@@ -3135,66 +3135,6 @@ async def finalize_add_upload(update: Update, context: ContextTypes.DEFAULT_TYPE
             f"<blockquote>❌ Error al procesar la subida: {str(e)[:100]}</blockquote>",
             parse_mode=ParseMode.HTML
         )
-
-async def handle_preview_callback(query: CallbackQuery, context: ContextTypes.DEFAULT_TYPE):
-    """Handle preview button clicks in search results"""
-    try:
-        # Obtener el ID del mensaje original
-        msg_id = int(query.data.replace("preview_", ""))
-        
-        try:
-            # Generar URL para el botón "Ver ahora"
-            view_url = f"https://t.me/MultimediaTVbot?start=content_{msg_id}"
-            
-            # Crear el botón "Ver ahora"
-            keyboard = [
-                [InlineKeyboardButton("Ver ahora", url=view_url)]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            
-            # Copiar el mensaje original con el botón "Ver ahora"
-            message = await context.bot.copy_message(
-                chat_id=query.message.chat_id,
-                from_chat_id=SEARCH_CHANNEL_ID,
-                message_id=msg_id,
-                reply_markup=reply_markup,
-                disable_notification=True
-            )
-            
-            # Enviar mensaje adicional con el botón de compartir
-            share_keyboard = [
-                [InlineKeyboardButton(
-                    "🔗 Compartir", 
-                    url=f"https://t.me/share/url?url={view_url}&text=¡Mira este contenido en MultimediaTV!"
-                )]
-            ]
-            share_markup = InlineKeyboardMarkup(share_keyboard)
-            
-            # Enviar mensaje con información adicional
-            await context.bot.send_message(
-                chat_id=query.message.chat_id,
-                text=(
-                    "📌 Muchas gracias por Preferirnos\n"
-                    "<blockquote expandable>En caso de que no puedas reenviar ni guardar el archivo en tu teléfono, "
-                    "quiere decir que no tienes un plan comprado. Por lo cual te recomiendo "
-                    "que adquieras los planes Medio o Ultra que le dan estas posibilidades.</blockquote>\n\n"
-                    "◈ Nota\n"
-                    "<blockquote>Adquiere un Plan y disfruta de todas las opciones</blockquote>\n\n"
-                    "Comparte con tus familiares y amigos el contenido anterior ☝️"
-                ),
-                reply_markup=share_markup,
-                parse_mode=ParseMode.HTML
-            )
-            
-            await query.answer("Previsualización mostrada")
-            
-        except Exception as e:
-            logger.error(f"Error mostrando previsualización: {e}")
-            await query.answer("No se pudo mostrar la previsualización")
-            
-    except Exception as e:
-        logger.error(f"Error en handle_preview_callback: {e}")
-        await query.answer("Error procesando la solicitud")
         
 async def load_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Comando para iniciar/finalizar la carga masiva de contenido"""
