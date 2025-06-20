@@ -1,0 +1,14 @@
+python-telegram-bot[job-queue]>=20.0
+Flask==3.0.0
+IMDbPY==2022.7.9
+pymongo==4.6.1
+requests==2.31.0
+beautifulsoup4==4.12.2
+Pillow==10.1.0
+python-dotenv==1.0.0
+deep-translator==1.11.4
+aiohttp==3.9.1
+asyncio==3.4.3
+python-dateutil==2.8.2
+pytz==2023.3
+yt-dlp==2023.11.16
