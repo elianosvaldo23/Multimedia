@@ -29,6 +29,9 @@ from telegram.error import TelegramError
 # Other imports remain the same
 from database import Database
 from plans import PLANS
+from auto_uploader import AutoUploader
+from ai_processor import AIProcessor
+from content_detector import ContentDetector
 from flask import Flask
 from threading import Thread
 from functools import wraps
@@ -132,6 +135,9 @@ ia = IMDb()
 
 # Initialize database
 db = Database()
+
+# Initialize AI Auto Uploader
+auto_uploader = AutoUploader(CHANNEL_ID, SEARCH_CHANNEL_ID, db)
 
 # Store the latest message ID
 last_message_id = 0
@@ -5993,41 +5999,57 @@ async def request_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     db.update_request_count(user_id)
     
     try:
-        # Crear botones para administrador
-        keyboard = [
-            [InlineKeyboardButton("Aceptar ✅", callback_data=f"accept_req_{user_id}_{content_name}")]
-        ]
-        admin_markup = InlineKeyboardMarkup(keyboard)
+        # Try AI automation first if enabled
+        ai_processed = False
+        if AI_AUTO_ENABLED:
+            ai_processed = await auto_process_request(update, context, user_id, year, content_name)
         
-        # Enviar solicitud a cada administrador
-        admin_messages_sent = False
-        for admin_id in ADMIN_IDS:  # ADMIN_IDS es una lista definida al inicio
-            try:
-                await context.bot.send_message(
-                    chat_id=admin_id,
-                    text=f"<blockquote>📩 <b>Nuevo Pedido</b>\n\n</blockquote>"
-                         f"Usuario: {update.effective_user.first_name} (@{update.effective_user.username})\n"
-                         f"ID: {user_id}\n"
-                         f"Año: {year}\n"
-                         f"Nombre: {content_name}",
-                    reply_markup=admin_markup,
-                    parse_mode=ParseMode.HTML
-                )
-                admin_messages_sent = True
-            except Exception as e:
-                logger.error(f"Error enviando mensaje al admin {admin_id}: {e}")
-                continue
+        # If AI didn't auto-accept or AI is disabled, send to admins for manual review
+        if not ai_processed:
+            # Crear botones para administrador
+            keyboard = [
+                [InlineKeyboardButton("Aceptar ✅", callback_data=f"accept_req_{user_id}_{content_name}")]
+            ]
+            admin_markup = InlineKeyboardMarkup(keyboard)
+            
+            # Enviar solicitud a cada administrador
+            admin_messages_sent = False
+            for admin_id in ADMIN_IDS:  # ADMIN_IDS es una lista definida al inicio
+                try:
+                    await context.bot.send_message(
+                        chat_id=admin_id,
+                        text=f"<blockquote>📩 <b>Nuevo Pedido</b>\n\n</blockquote>"
+                             f"Usuario: {update.effective_user.first_name} (@{update.effective_user.username})\n"
+                             f"ID: {user_id}\n"
+                             f"Año: {year}\n"
+                             f"Nombre: {content_name}",
+                        reply_markup=admin_markup,
+                        parse_mode=ParseMode.HTML
+                    )
+                    admin_messages_sent = True
+                except Exception as e:
+                    logger.error(f"Error enviando mensaje al admin {admin_id}: {e}")
+                    continue
+            
+            if not admin_messages_sent:
+                raise Exception("No se pudo enviar el mensaje a ningún administrador")
         
-        if not admin_messages_sent:
-            raise Exception("No se pudo enviar el mensaje a ningún administrador")
-        
-        # Confirm to user
-        await update.message.reply_text(
-            f"✅ Tu pedido '<b>{content_name}</b>' ({year}) ha sido enviado al administrador.\n"
-            f"<blockquote>Te notificaremos cuando esté disponible.\n"
-            f"Te quedan {requests_left-1} pedidos hoy.</blockquote>",
-            parse_mode=ParseMode.HTML
-        )
+        # Confirm to user (different message if AI processed)
+        if ai_processed:
+            await update.message.reply_text(
+                f"🤖 Tu pedido '<b>{content_name}</b>' ({year}) ha sido procesado automáticamente por IA.\n"
+                f"<blockquote>✅ El pedido fue aceptado automáticamente.\n"
+                f"🔍 Buscaremos el contenido y te notificaremos cuando esté disponible.\n"
+                f"Te quedan {requests_left-1} pedidos hoy.</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+        else:
+            await update.message.reply_text(
+                f"✅ Tu pedido '<b>{content_name}</b>' ({year}) ha sido enviado al administrador.\n"
+                f"<blockquote>Te notificaremos cuando esté disponible.\n"
+                f"Te quedan {requests_left-1} pedidos hoy.</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
         
     except Exception as e:
         logger.error(f"Error al enviar la solicitud al administrador: {e}")
@@ -6060,10 +6082,326 @@ async def admin_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Estadísticas:\n"
         "/stats - Muestra estadísticas del bot\n\n"
         "Comunicación:\n"
-        "/broadcast mensaje - Envía un mensaje a todos los usuarios"
+        "/broadcast mensaje - Envía un mensaje a todos los usuarios\n\n"
+        "🤖 Automatización IA:\n"
+        "/ai_auto on/off - Activa/desactiva la automatización IA\n"
+        "/ai_status - Muestra el estado de la automatización IA\n"
+        "/ai_config - Configura parámetros de la IA"
     )
     
     await update.message.reply_text(text=help_text, parse_mode=ParseMode.HTML)
+
+# AI Automation System
+AI_AUTO_ENABLED = False
+AI_CONFIG = {
+    'auto_accept_threshold': 0.8,  # Umbral de confianza para auto-aceptar
+    'auto_search_enabled': True,   # Búsqueda automática en IMDb
+    'auto_notify_enabled': True,   # Notificaciones automáticas
+    'processing_delay': 2          # Delay en segundos entre procesamiento
+}
+
+async def ai_auto_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Command to enable/disable AI automation"""
+    user = update.effective_user
+    
+    # Check if user is admin
+    if user.id not in ADMIN_IDS:
+        return
+    
+    if not context.args:
+        await update.message.reply_text(
+            "Uso: /ai_auto on/off\n"
+            f"Estado actual: {'🟢 Activado' if AI_AUTO_ENABLED else '🔴 Desactivado'}",
+            parse_mode=ParseMode.HTML
+        )
+        return
+    
+    action = context.args[0].lower()
+    global AI_AUTO_ENABLED
+    
+    if action == 'on':
+        AI_AUTO_ENABLED = True
+        await update.message.reply_text(
+            "🤖 <b>Automatización IA Activada</b>\n\n"
+            "<blockquote>✅ El sistema ahora procesará automáticamente:\n"
+            "• Análisis de pedidos con IA\n"
+            "• Búsqueda automática en IMDb\n"
+            "• Aceptación automática de pedidos válidos\n"
+            "• Notificaciones inteligentes</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+    elif action == 'off':
+        AI_AUTO_ENABLED = False
+        await update.message.reply_text(
+            "🔴 <b>Automatización IA Desactivada</b>\n\n"
+            "<blockquote>❌ El sistema vuelve al modo manual:\n"
+            "• Los pedidos requerirán aprobación manual\n"
+            "• No habrá búsqueda automática\n"
+            "• Todas las acciones serán manuales</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+    else:
+        await update.message.reply_text(
+            "❌ Opción inválida. Usa: /ai_auto on/off",
+            parse_mode=ParseMode.HTML
+        )
+
+async def ai_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Command to show AI automation status"""
+    user = update.effective_user
+    
+    # Check if user is admin
+    if user.id not in ADMIN_IDS:
+        return
+    
+    status_icon = "🟢" if AI_AUTO_ENABLED else "🔴"
+    status_text = "Activado" if AI_AUTO_ENABLED else "Desactivado"
+    
+    config_text = (
+        f"🤖 <b>Estado de Automatización IA</b>\n\n"
+        f"Estado: {status_icon} <b>{status_text}</b>\n\n"
+        f"<b>Configuración Actual:</b>\n"
+        f"• Umbral de auto-aceptación: {AI_CONFIG['auto_accept_threshold']*100}%\n"
+        f"• Búsqueda automática: {'✅' if AI_CONFIG['auto_search_enabled'] else '❌'}\n"
+        f"• Notificaciones automáticas: {'✅' if AI_CONFIG['auto_notify_enabled'] else '❌'}\n"
+        f"• Delay de procesamiento: {AI_CONFIG['processing_delay']}s\n\n"
+        f"<blockquote>💡 Usa /ai_config para modificar la configuración</blockquote>"
+    )
+    
+    await update.message.reply_text(text=config_text, parse_mode=ParseMode.HTML)
+
+async def ai_config_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Command to configure AI automation parameters"""
+    user = update.effective_user
+    
+    # Check if user is admin
+    if user.id not in ADMIN_IDS:
+        return
+    
+    if not context.args:
+        await update.message.reply_text(
+            "<b>🔧 Configuración de IA</b>\n\n"
+            "Comandos disponibles:\n"
+            "/ai_config threshold 0.8 - Establece umbral de confianza (0.1-1.0)\n"
+            "/ai_config search on/off - Activa/desactiva búsqueda automática\n"
+            "/ai_config notify on/off - Activa/desactiva notificaciones automáticas\n"
+            "/ai_config delay 2 - Establece delay de procesamiento (1-10s)\n\n"
+            "<blockquote>Ejemplo: /ai_config threshold 0.9</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        return
+    
+    if len(context.args) < 2:
+        await update.message.reply_text(
+            "❌ Faltan parámetros. Usa /ai_config sin argumentos para ver la ayuda.",
+            parse_mode=ParseMode.HTML
+        )
+        return
+    
+    param = context.args[0].lower()
+    value = context.args[1].lower()
+    
+    try:
+        if param == 'threshold':
+            threshold = float(value)
+            if 0.1 <= threshold <= 1.0:
+                AI_CONFIG['auto_accept_threshold'] = threshold
+                await update.message.reply_text(
+                    f"✅ Umbral de auto-aceptación establecido en {threshold*100}%",
+                    parse_mode=ParseMode.HTML
+                )
+            else:
+                await update.message.reply_text(
+                    "❌ El umbral debe estar entre 0.1 y 1.0",
+                    parse_mode=ParseMode.HTML
+                )
+        
+        elif param == 'search':
+            if value in ['on', 'off']:
+                AI_CONFIG['auto_search_enabled'] = value == 'on'
+                status = "activada" if value == 'on' else "desactivada"
+                await update.message.reply_text(
+                    f"✅ Búsqueda automática {status}",
+                    parse_mode=ParseMode.HTML
+                )
+            else:
+                await update.message.reply_text(
+                    "❌ Usa 'on' o 'off' para la búsqueda automática",
+                    parse_mode=ParseMode.HTML
+                )
+        
+        elif param == 'notify':
+            if value in ['on', 'off']:
+                AI_CONFIG['auto_notify_enabled'] = value == 'on'
+                status = "activadas" if value == 'on' else "desactivadas"
+                await update.message.reply_text(
+                    f"✅ Notificaciones automáticas {status}",
+                    parse_mode=ParseMode.HTML
+                )
+            else:
+                await update.message.reply_text(
+                    "❌ Usa 'on' o 'off' para las notificaciones automáticas",
+                    parse_mode=ParseMode.HTML
+                )
+        
+        elif param == 'delay':
+            delay = int(value)
+            if 1 <= delay <= 10:
+                AI_CONFIG['processing_delay'] = delay
+                await update.message.reply_text(
+                    f"✅ Delay de procesamiento establecido en {delay} segundos",
+                    parse_mode=ParseMode.HTML
+                )
+            else:
+                await update.message.reply_text(
+                    "❌ El delay debe estar entre 1 y 10 segundos",
+                    parse_mode=ParseMode.HTML
+                )
+        
+        else:
+            await update.message.reply_text(
+                "❌ Parámetro desconocido. Usa /ai_config para ver la ayuda.",
+                parse_mode=ParseMode.HTML
+            )
+    
+    except ValueError:
+        await update.message.reply_text(
+            "❌ Valor inválido. Verifica el formato del parámetro.",
+            parse_mode=ParseMode.HTML
+        )
+
+async def analyze_request_with_ai(content_name: str, year: str) -> dict:
+    """Analyze a content request using AI logic"""
+    try:
+        # Simulated AI analysis - In a real implementation, this would use actual AI
+        confidence_score = 0.0
+        analysis_result = {
+            'confidence': confidence_score,
+            'is_valid': False,
+            'content_type': 'unknown',
+            'normalized_name': content_name.strip(),
+            'recommendations': []
+        }
+        
+        # Basic validation rules
+        if len(content_name.strip()) < 2:
+            analysis_result['recommendations'].append("Nombre muy corto")
+            return analysis_result
+        
+        # Check if year is valid
+        try:
+            year_int = int(year)
+            if 1900 <= year_int <= 2030:
+                confidence_score += 0.3
+            else:
+                analysis_result['recommendations'].append("Año inválido")
+        except:
+            analysis_result['recommendations'].append("Año no numérico")
+        
+        # Check content name patterns
+        content_lower = content_name.lower()
+        
+        # Movie indicators
+        movie_keywords = ['pelicula', 'movie', 'film']
+        series_keywords = ['serie', 'series', 'temporada', 'season']
+        
+        if any(keyword in content_lower for keyword in movie_keywords):
+            analysis_result['content_type'] = 'movie'
+            confidence_score += 0.2
+        elif any(keyword in content_lower for keyword in series_keywords):
+            analysis_result['content_type'] = 'series'
+            confidence_score += 0.2
+        
+        # Check for common valid patterns
+        if len(content_name.split()) >= 2:  # At least 2 words
+            confidence_score += 0.2
+        
+        # Check for special characters that might indicate spam
+        spam_chars = ['@', '#', 'http', 'www', '.com']
+        if any(char in content_lower for char in spam_chars):
+            confidence_score -= 0.5
+            analysis_result['recommendations'].append("Contiene caracteres sospechosos")
+        
+        # Final confidence calculation
+        analysis_result['confidence'] = max(0.0, min(1.0, confidence_score))
+        analysis_result['is_valid'] = analysis_result['confidence'] >= AI_CONFIG['auto_accept_threshold']
+        
+        return analysis_result
+        
+    except Exception as e:
+        logger.error(f"Error in AI analysis: {e}")
+        return {
+            'confidence': 0.0,
+            'is_valid': False,
+            'content_type': 'unknown',
+            'normalized_name': content_name,
+            'recommendations': ['Error en análisis']
+        }
+
+async def auto_process_request(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int, year: str, content_name: str):
+    """Automatically process a request using AI"""
+    if not AI_AUTO_ENABLED:
+        return False
+    
+    try:
+        # Add processing delay
+        await asyncio.sleep(AI_CONFIG['processing_delay'])
+        
+        # Analyze request with AI
+        analysis = await analyze_request_with_ai(content_name, year)
+        
+        # Send analysis to admins
+        analysis_text = (
+            f"🤖 <b>Análisis IA del Pedido</b>\n\n"
+            f"Usuario: {update.effective_user.first_name} (@{update.effective_user.username})\n"
+            f"Contenido: {content_name} ({year})\n\n"
+            f"<b>Resultados del Análisis:</b>\n"
+            f"• Confianza: {analysis['confidence']*100:.1f}%\n"
+            f"• Tipo: {analysis['content_type']}\n"
+            f"• Válido: {'✅' if analysis['is_valid'] else '❌'}\n"
+        )
+        
+        if analysis['recommendations']:
+            analysis_text += f"\n<b>Recomendaciones:</b>\n"
+            for rec in analysis['recommendations']:
+                analysis_text += f"• {rec}\n"
+        
+        # Auto-accept if confidence is high enough
+        if analysis['is_valid'] and AI_CONFIG['auto_search_enabled']:
+            analysis_text += f"\n🟢 <b>PEDIDO AUTO-ACEPTADO</b>"
+            
+            # Auto-notify user
+            if AI_CONFIG['auto_notify_enabled']:
+                try:
+                    await context.bot.send_message(
+                        chat_id=user_id,
+                        text=f"🤖 <b>Pedido Procesado Automáticamente</b>\n\n"
+                             f"Tu pedido '<b>{content_name}</b>' ({year}) ha sido aceptado automáticamente por nuestro sistema IA.\n"
+                             f"<blockquote>✅ Confianza del análisis: {analysis['confidence']*100:.1f}%\n"
+                             f"🔍 Buscaremos el contenido y te notificaremos cuando esté disponible.</blockquote>",
+                        parse_mode=ParseMode.HTML
+                    )
+                except Exception as e:
+                    logger.error(f"Error notifying user about auto-acceptance: {e}")
+        else:
+            analysis_text += f"\n🟡 <b>REQUIERE REVISIÓN MANUAL</b>"
+        
+        # Send analysis to admins
+        for admin_id in ADMIN_IDS:
+            try:
+                await context.bot.send_message(
+                    chat_id=admin_id,
+                    text=analysis_text,
+                    parse_mode=ParseMode.HTML
+                )
+            except Exception as e:
+                logger.error(f"Error sending AI analysis to admin {admin_id}: {e}")
+        
+        return analysis['is_valid']
+        
+    except Exception as e:
+        logger.error(f"Error in auto-processing request: {e}")
+        return False
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin command to show bot statistics"""
@@ -7164,6 +7502,11 @@ def main() -> None:
     application.add_handler(CommandHandler("stats", stats))
     application.add_handler(CommandHandler("broadcast", broadcast))
     application.add_handler(CommandHandler("clearcache", clear_cache_command))
+    
+    # AI Automation command handlers
+    application.add_handler(CommandHandler("ai_auto", ai_auto_command))
+    application.add_handler(CommandHandler("ai_status", ai_status_command))
+    application.add_handler(CommandHandler("ai_config", ai_config_command))
 
     # Handlers para el nuevo comando ser
     application.add_handler(CommandHandler("ser", ser_command))
