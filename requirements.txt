@@ -12,3 +12,8 @@ asyncio==3.4.3
 python-dateutil==2.8.2
 pytz==2023.3
 yt-dlp==2023.11.16
+nltk==3.8.1
+fuzzywuzzy==0.18.0
+python-levenshtein==0.21.1
+rapidfuzz==3.5.2
+unidecode==1.3.7
