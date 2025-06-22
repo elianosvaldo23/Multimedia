@@ -73,7 +73,7 @@ def keep_alive():
     t.start()
 
 # Constantes del bot
-TOKEN = "7853962859:AAFxRdG9lqc8PKC9J7rtFlkQIVnB3iYlGQk"
+TOKEN = "7636379442:AAF1-xO0HCBpRhdaCYM3iRbXHzwnOn59O08"
 ADMIN_IDS = [1742433244, 7588449861, 6866175814]  # Lista de IDS de administradores
 CHANNEL_ID = -1002584219284
 GROUP_ID = -1002585538833
