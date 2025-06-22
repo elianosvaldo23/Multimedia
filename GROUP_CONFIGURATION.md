@@ -70,6 +70,22 @@ Los administradores también pueden usar el comando `/load` para subida manual:
 3. Enviar los archivos multimedia
 4. Enviar `/load` nuevamente para finalizar
 
+#### Comando /group_load (NUEVO)
+**Comando especial para activar procesamiento automático en grupo:**
+- `/group_load` - Activar/desactivar modo de procesamiento automático en grupo
+- **Función**: Permite que los administradores señalen cuando van a enviar contenido al grupo para procesamiento automático
+- **Ventajas**:
+  - Control explícito sobre cuándo procesar contenido del grupo
+  - Evita procesamiento accidental de contenido no deseado
+  - Seguimiento de sesiones de carga con duración y administrador responsable
+  - Notificaciones automáticas al grupo sobre el estado del modo
+
+**Uso del comando:**
+1. **Activar**: `/group_load` - Activa el modo y notifica al grupo
+2. **Enviar contenido**: Envía archivos multimedia al grupo configurado
+3. **Procesamiento automático**: El bot procesa cada archivo automáticamente
+4. **Desactivar**: `/group_load` nuevamente - Desactiva el modo y muestra estadísticas
+
 ### 6. Configuración Actual del Bot
 
 ```python
