@@ -6108,6 +6108,8 @@ async def ai_auto_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user.id not in ADMIN_IDS:
         return
     
+    global AI_AUTO_ENABLED
+    
     if not context.args:
         await update.message.reply_text(
             "Uso: /ai_auto on/off\n"
@@ -6117,7 +6119,6 @@ async def ai_auto_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     action = context.args[0].lower()
-    global AI_AUTO_ENABLED
     
     if action == 'on':
         AI_AUTO_ENABLED = True
