@@ -6000,6 +6000,7 @@ async def request_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         # Try AI automation first if enabled
+        global AI_AUTO_ENABLED
         ai_processed = False
         if AI_AUTO_ENABLED:
             ai_processed = await auto_process_request(update, context, user_id, year, content_name)
@@ -6149,6 +6150,7 @@ async def ai_auto_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def ai_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Command to show AI automation status"""
+    global AI_AUTO_ENABLED, AI_CONFIG
     user = update.effective_user
     
     # Check if user is admin
@@ -6173,6 +6175,7 @@ async def ai_status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def ai_config_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Command to configure AI automation parameters"""
+    global AI_CONFIG
     user = update.effective_user
     
     # Check if user is admin
@@ -6341,6 +6344,7 @@ async def analyze_request_with_ai(content_name: str, year: str) -> dict:
 
 async def auto_process_request(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int, year: str, content_name: str):
     """Automatically process a request using AI"""
+    global AI_AUTO_ENABLED, AI_CONFIG
     if not AI_AUTO_ENABLED:
         return False
     
