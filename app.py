@@ -6103,12 +6103,13 @@ AI_CONFIG = {
 
 async def ai_auto_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Command to enable/disable AI automation"""
-    global AI_AUTO_ENABLED
     user = update.effective_user
     
     # Check if user is admin
     if user.id not in ADMIN_IDS:
         return
+    
+    global AI_AUTO_ENABLED
     
     if not context.args:
         await update.message.reply_text(
