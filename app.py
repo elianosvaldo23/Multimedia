@@ -7878,6 +7878,7 @@ def main() -> None:
     application.add_handler(CommandHandler("ai_status", ai_status_command))
     application.add_handler(CommandHandler("ai_config", ai_config_command))
     application.add_handler(CommandHandler("ai_uploader", ai_uploader_command))
+    application.add_handler(CommandHandler("autoload", autoload_command))
     application.add_handler(CommandHandler("ai_queue", ai_queue_command))
 
     # Handlers para el nuevo comando ser
