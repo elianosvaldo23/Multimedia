@@ -6087,7 +6087,9 @@ async def admin_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🤖 Automatización IA:\n"
         "/ai_auto on/off - Activa/desactiva la automatización IA\n"
         "/ai_status - Muestra el estado de la automatización IA\n"
-        "/ai_config - Configura parámetros de la IA"
+        "/ai_config - Configura parámetros de la IA\n"
+        "/ai_uploader - Controla el sistema de subida automática\n"
+        "/ai_queue - Muestra el estado de la cola de procesamiento"
     )
     
     await update.message.reply_text(text=help_text, parse_mode=ParseMode.HTML)
@@ -7471,6 +7473,135 @@ async def send_keepalive_message(context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Error sending keepalive message: {e}")
 
+async def handle_ai_automation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handler para automatización IA de contenido multimedia"""
+    try:
+        # Solo procesar si la automatización está habilitada
+        if not AI_AUTO_ENABLED:
+            return
+        
+        # Solo procesar mensajes del grupo específico o canales autorizados
+        if update.message.chat_id not in [GROUP_ID, CHANNEL_ID]:
+            return
+        
+        # No procesar mensajes de administradores (ya tienen sus propios handlers)
+        if update.effective_user and update.effective_user.id in ADMIN_IDS:
+            return
+        
+        # Intentar procesar automáticamente
+        processed = await auto_uploader.process_message_automatically(update, context)
+        
+        if processed:
+            logger.info(f"Mensaje procesado automáticamente por IA: {update.message.message_id}")
+        
+    except Exception as e:
+        logger.error(f"Error en automatización IA: {e}")
+
+async def ai_uploader_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando para controlar el auto uploader"""
+    user = update.effective_user
+    
+    # Check if user is admin
+    if user.id not in ADMIN_IDS:
+        return
+    
+    if not context.args:
+        config = auto_uploader.get_config()
+        status_text = (
+            f"🤖 <b>Estado del Auto Uploader</b>\n\n"
+            f"Estado: {'🟢 Activado' if config['enabled'] else '🔴 Desactivado'}\n"
+            f"Confianza mínima: {config['min_confidence']*100}%\n"
+            f"Búsqueda IMDb: {'✅' if config['auto_search_imdb'] else '❌'}\n"
+            f"Generar descripción: {'✅' if config['auto_generate_description'] else '❌'}\n"
+            f"Descargar poster: {'✅' if config['auto_download_poster'] else '❌'}\n"
+            f"Delay procesamiento: {config['processing_delay']}s\n\n"
+            f"<b>Comandos disponibles:</b>\n"
+            f"/ai_uploader on/off - Activar/desactivar\n"
+            f"/ai_uploader confidence 0.8 - Establecer confianza mínima\n"
+            f"/ai_uploader imdb on/off - Búsqueda automática IMDb\n"
+            f"/ai_uploader poster on/off - Descarga automática de posters"
+        )
+        await update.message.reply_text(text=status_text, parse_mode=ParseMode.HTML)
+        return
+    
+    action = context.args[0].lower()
+    
+    if action == 'on':
+        auto_uploader.update_config({'enabled': True})
+        await update.message.reply_text(
+            "🟢 <b>Auto Uploader Activado</b>\n\n"
+            "El sistema procesará automáticamente contenido multimedia detectado.",
+            parse_mode=ParseMode.HTML
+        )
+    elif action == 'off':
+        auto_uploader.update_config({'enabled': False})
+        await update.message.reply_text(
+            "🔴 <b>Auto Uploader Desactivado</b>\n\n"
+            "El procesamiento automático ha sido deshabilitado.",
+            parse_mode=ParseMode.HTML
+        )
+    elif action == 'confidence' and len(context.args) >= 2:
+        try:
+            confidence = float(context.args[1])
+            if 0.1 <= confidence <= 1.0:
+                auto_uploader.update_config({'min_confidence': confidence})
+                await update.message.reply_text(
+                    f"✅ Confianza mínima establecida en {confidence*100}%",
+                    parse_mode=ParseMode.HTML
+                )
+            else:
+                await update.message.reply_text(
+                    "❌ La confianza debe estar entre 0.1 y 1.0",
+                    parse_mode=ParseMode.HTML
+                )
+        except ValueError:
+            await update.message.reply_text(
+                "❌ Valor de confianza inválido",
+                parse_mode=ParseMode.HTML
+            )
+    elif action == 'imdb' and len(context.args) >= 2:
+        value = context.args[1].lower() == 'on'
+        auto_uploader.update_config({'auto_search_imdb': value})
+        await update.message.reply_text(
+            f"{'✅' if value else '❌'} Búsqueda automática IMDb {'activada' if value else 'desactivada'}",
+            parse_mode=ParseMode.HTML
+        )
+    elif action == 'poster' and len(context.args) >= 2:
+        value = context.args[1].lower() == 'on'
+        auto_uploader.update_config({'auto_download_poster': value})
+        await update.message.reply_text(
+            f"{'✅' if value else '❌'} Descarga automática de posters {'activada' if value else 'desactivada'}",
+            parse_mode=ParseMode.HTML
+        )
+    else:
+        await update.message.reply_text(
+            "❌ Comando inválido. Usa /ai_uploader sin argumentos para ver la ayuda.",
+            parse_mode=ParseMode.HTML
+        )
+
+async def ai_queue_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando para ver el estado de la cola de procesamiento"""
+    user = update.effective_user
+    
+    # Check if user is admin
+    if user.id not in ADMIN_IDS:
+        return
+    
+    queue_status = auto_uploader.get_queue_status()
+    
+    status_text = (
+        f"📋 <b>Estado de la Cola de Procesamiento</b>\n\n"
+        f"Elementos en cola: {queue_status['queue_size']}/{queue_status['max_queue_size']}\n"
+        f"Estado: {'⏳ Procesando' if queue_status['is_processing'] else '💤 Inactivo'}\n\n"
+    )
+    
+    if queue_status['queue_size'] > 0:
+        status_text += f"🔄 Hay {queue_status['queue_size']} elementos esperando procesamiento."
+    else:
+        status_text += "✅ No hay elementos en cola."
+    
+    await update.message.reply_text(text=status_text, parse_mode=ParseMode.HTML)
+
 # Mantener el servidor Flask activo
 def main() -> None:
     """Start the bot."""
@@ -7512,6 +7643,8 @@ def main() -> None:
     application.add_handler(CommandHandler("ai_auto", ai_auto_command))
     application.add_handler(CommandHandler("ai_status", ai_status_command))
     application.add_handler(CommandHandler("ai_config", ai_config_command))
+    application.add_handler(CommandHandler("ai_uploader", ai_uploader_command))
+    application.add_handler(CommandHandler("ai_queue", ai_queue_command))
 
     # Handlers para el nuevo comando ser
     application.add_handler(CommandHandler("ser", ser_command))
@@ -7581,6 +7714,12 @@ def main() -> None:
         (filters.PHOTO | filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND,
         handle_multi_seasons_input,
     ), group=-4)
+    
+    # Grupo -1: Handler para automatización IA (menor prioridad)
+    application.add_handler(MessageHandler(
+        (filters.PHOTO | filters.VIDEO | filters.Document.ALL | filters.TEXT) & ~filters.COMMAND,
+        handle_ai_automation,
+    ), group=-1)
     
     # Tareas periódicas
     application.job_queue.run_repeating(
