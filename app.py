@@ -29,9 +29,9 @@ from telegram.error import TelegramError
 # Other imports remain the same
 from database import Database
 from plans import PLANS
-from auto_uploader import AutoUploader
-from ai_processor import AIProcessor
-from content_detector import ContentDetector
+# from auto_uploader import AutoUploader
+# from ai_processor import AIProcessor  
+# from content_detector import ContentDetector
 from flask import Flask
 from threading import Thread
 from functools import wraps
@@ -137,7 +137,7 @@ ia = IMDb()
 db = Database()
 
 # Initialize AI Auto Uploader
-auto_uploader = AutoUploader(CHANNEL_ID, SEARCH_CHANNEL_ID, db)
+# auto_uploader = AutoUploader(CHANNEL_ID, SEARCH_CHANNEL_ID, db)
 
 # Store the latest message ID
 last_message_id = 0
@@ -7520,11 +7520,12 @@ def main() -> None:
     application.add_handler(CommandHandler("buscar", buscar_command))
 
     # Add periodic keepalive message
-    application.job_queue.run_repeating(
-        send_keepalive_message,
-        interval=600,
-        first=10
-    )
+    if application.job_queue:
+        application.job_queue.run_repeating(
+            send_keepalive_message,
+            interval=600,
+            first=10
+        )
     
     # Add callback query handler
     application.add_handler(CallbackQueryHandler(handle_callback_query))
