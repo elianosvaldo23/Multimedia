@@ -123,6 +123,10 @@ SER_STATE_WAITING_NAME = 'WAITING_NAME'
 SER_STATE_RECEIVING = 'RECEIVING'
 SER_STATE_COVER = 'COVER'
 
+# Constantes para el modo de carga automática en grupos
+GROUP_LOAD_INACTIVE = 0
+GROUP_LOAD_ACTIVE = 1
+
 # Enable logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -3143,14 +3147,80 @@ async def finalize_add_upload(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
 
 async def load_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Comando para iniciar/finalizar la carga masiva de contenido"""
+    """Comando para iniciar/finalizar la carga masiva de contenido o activar modo automático en grupos"""
     user = update.effective_user
     
     # Verificar que el usuario es administrador
     if user.id not in ADMIN_IDS:
         return
     
-    # Obtener el estado actual de carga
+    chat_type = update.effective_chat.type
+    chat_id = update.effective_chat.id
+    
+    # Si es un grupo, activar/desactivar modo automático
+    if chat_type in ['group', 'supergroup']:
+        # Obtener el estado actual del modo grupo para este chat específico
+        group_loads = context.bot_data.get('group_loads', {})
+        group_load_active = group_loads.get(chat_id, {}).get('active', False)
+        
+        if not group_load_active:
+            # Activar modo automático para este grupo
+            if 'group_loads' not in context.bot_data:
+                context.bot_data['group_loads'] = {}
+            
+            context.bot_data['group_loads'][chat_id] = {
+                'active': True,
+                'admin_id': user.id,
+                'admin_name': user.first_name,
+                'start_time': time.time(),
+                'processed_count': 0
+            }
+            
+            chat_title = update.effective_chat.title or 'Este grupo'
+            auto_uploader_status = '🟢 Activo' if auto_uploader.get_config()['enabled'] else '🔴 Inactivo'
+            
+            await update.message.reply_text(
+                f"<blockquote>🚀 <b>Modo de carga automática ACTIVADO</b>\n\n"
+                f"👤 <b>Administrador:</b> {user.first_name}\n"
+                f"📍 <b>Grupo:</b> {chat_title}\n\n"
+                f"📋 <b>Instrucciones:</b>\n"
+                f"1️⃣ Envía contenido multimedia a este grupo\n"
+                f"2️⃣ El bot procesará automáticamente cada archivo\n"
+                f"3️⃣ Se aplicará análisis IA y subida automática\n"
+                f"4️⃣ Usa /load nuevamente para desactivar\n\n"
+                f"⚙️ <b>Configuración actual:</b>\n"
+                f"• Auto Uploader: {auto_uploader_status}\n\n"
+                f"✅ <b>Listo para procesar contenido automáticamente!</b></blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+            
+        else:
+            # Desactivar modo automático para este grupo
+            group_info = group_loads[chat_id]
+            start_time = group_info.get('start_time', time.time())
+            duration = int(time.time() - start_time)
+            duration_str = f"{duration // 3600}h {(duration % 3600) // 60}m {duration % 60}s"
+            processed_count = group_info.get('processed_count', 0)
+            admin_name = group_info.get('admin_name', 'Administrador')
+            
+            # Eliminar el grupo de la lista activa
+            del context.bot_data['group_loads'][chat_id]
+            
+            await update.message.reply_text(
+                f"<blockquote>🛑 <b>Modo de carga automática DESACTIVADO</b>\n\n"
+                f"👤 <b>Desactivado por:</b> {user.first_name}\n"
+                f"👤 <b>Activado por:</b> {admin_name}\n"
+                f"⏱️ <b>Duración:</b> {duration_str}\n"
+                f"📊 <b>Archivos procesados:</b> {processed_count}\n\n"
+                f"✅ El bot ya no procesará automáticamente contenido en este grupo.\n"
+                f"Puedes reactivarlo con /load cuando lo necesites.</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+        
+        return
+    
+    # Si es chat privado, usar el modo de carga masiva original
+    # Obtener el estado actual
     load_state = context.bot_data.get('load_state', LOAD_STATE_INACTIVE)
     
     # Si estamos inactivos, iniciar el proceso
@@ -7667,6 +7737,83 @@ async def handle_ai_automation(update: Update, context: ContextTypes.DEFAULT_TYP
     except Exception as e:
         logger.error(f"Error en automatización IA: {e}")
 
+async def handle_group_auto_load(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Manejar carga automática de contenido en grupos cuando el modo /load está activo"""
+    try:
+        # Verificar si el mensaje tiene contenido multimedia
+        if not (update.message.video or update.message.document):
+            return
+        
+        # Verificar si el usuario es administrador
+        user = update.effective_user
+        if not user or user.id not in ADMIN_IDS:
+            return
+        
+        chat_id = update.effective_chat.id
+        
+        # Verificar si el modo de carga automática está activo para este grupo
+        group_loads = context.bot_data.get('group_loads', {})
+        if chat_id not in group_loads or not group_loads[chat_id].get('active', False):
+            return
+        
+        # Obtener información del archivo
+        if update.message.video:
+            file_obj = update.message.video
+            file_name = f"video_{file_obj.file_id}.mp4"
+            file_type = "video"
+        else:
+            file_obj = update.message.document
+            file_name = file_obj.file_name or f"document_{file_obj.file_id}"
+            file_type = "document"
+        
+        # Obtener caption si existe
+        caption = update.message.caption or ""
+        
+        # Crear datos del contenido para el auto uploader
+        content_data = {
+            'message_id': update.message.message_id,
+            'chat_id': chat_id,
+            'file_name': file_name,
+            'caption': caption,
+            'file_size': file_obj.file_size,
+            'user_id': user.id,
+            'timestamp': time.time(),
+            'file_type': file_type
+        }
+        
+        # Incrementar contador de archivos procesados
+        group_loads[chat_id]['processed_count'] = group_loads[chat_id].get('processed_count', 0) + 1
+        
+        # Enviar confirmación al grupo
+        await update.message.reply_text(
+            f"<blockquote>🤖 <b>Procesando automáticamente...</b>\n\n"
+            f"📁 <b>Archivo:</b> {file_name}\n"
+            f"👤 <b>Enviado por:</b> {user.first_name}\n"
+            f"📊 <b>Archivos procesados:</b> {group_loads[chat_id]['processed_count']}\n\n"
+            f"⏳ El contenido será analizado y subido automáticamente.</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        
+        # Enviar al auto uploader para procesamiento si está habilitado
+        if auto_uploader.get_config()['enabled']:
+            await auto_uploader.process_content(content_data, update, context)
+        else:
+            # Si el auto uploader no está habilitado, mostrar mensaje informativo
+            await update.message.reply_text(
+                "<blockquote>⚠️ <b>Auto Uploader deshabilitado</b>\n\n"
+                "Para procesar automáticamente el contenido, activa el Auto Uploader con:\n"
+                "/ai_uploader on</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+        
+    except Exception as e:
+        logger.error(f"Error en handle_group_auto_load: {e}")
+        await update.message.reply_text(
+            "<blockquote>❌ Error procesando el archivo automáticamente.\n"
+            "Intenta enviarlo nuevamente.</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+
 async def autoload_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando para activar/desactivar el modo de procesamiento automático en grupo"""
     user = update.effective_user
@@ -7948,6 +8095,16 @@ def main() -> None:
         (filters.PHOTO | filters.VIDEO | filters.Document.ALL) & ~filters.COMMAND,
         handle_multi_seasons_input,
     ), group=-4)
+    
+    # Grupo -2: Handler para carga automática en grupos (prioridad media-alta)
+    application.add_handler(MessageHandler(
+        (filters.VIDEO | filters.Document.ALL) 
+        & ~filters.COMMAND 
+        & filters.User(user_id=ADMIN_IDS)
+        & filters.ChatType.GROUPS,
+        handle_group_auto_load,
+        block=True
+    ), group=-2)
     
     # Grupo -1: Handler para automatización IA (menor prioridad)
     application.add_handler(MessageHandler(
