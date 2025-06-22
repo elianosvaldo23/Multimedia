@@ -3783,6 +3783,103 @@ async def update_load_status_message(update, context):
     except Exception as e:
         logger.error(f"Error al actualizar mensaje de estado: {e}")
 
+async def group_load_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Comando para activar/desactivar el modo de procesamiento automático en grupo"""
+    user = update.effective_user
+    
+    # Verificar que el usuario es administrador
+    if user.id not in ADMIN_IDS:
+        await update.message.reply_text(
+            "<blockquote>❌ Solo los administradores pueden usar este comando.</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        return
+    
+    # Obtener el estado actual del modo grupo
+    group_load_active = context.bot_data.get('group_load_active', False)
+    
+    # Alternar el estado
+    if not group_load_active:
+        # Activar modo grupo
+        context.bot_data['group_load_active'] = True
+        context.bot_data['group_load_admin'] = user.id
+        context.bot_data['group_load_start_time'] = time.time()
+        
+        await update.message.reply_text(
+            f"<blockquote>🚀 <b>Modo de procesamiento automático en grupo ACTIVADO</b>\n\n"
+            f"👤 <b>Administrador:</b> {user.first_name}\n"
+            f"📍 <b>Grupo configurado:</b> {GROUP_ID}\n\n"
+            f"📋 <b>Instrucciones:</b>\n"
+            f"1️⃣ Envía contenido multimedia al grupo {GROUP_ID}\n"
+            f"2️⃣ El bot procesará automáticamente cada archivo\n"
+            f"3️⃣ Se aplicará análisis IA y subida automática\n"
+            f"4️⃣ Usa /group_load nuevamente para desactivar\n\n"
+            f"⚙️ <b>Configuración actual:</b>\n"
+            f"• Automatización IA: {'🟢 Activa' if AI_AUTO_ENABLED else '🔴 Inactiva'}\n"
+            f"• Auto Uploader: {'🟢 Activo' if auto_uploader.get_config()['enabled'] else '🔴 Inactivo'}\n\n"
+            f"⚠️ <b>Nota:</b> Asegúrate de que la automatización IA esté activada (/ai_auto on)</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        
+        # Enviar notificación al grupo si es posible
+        try:
+            await context.bot.send_message(
+                chat_id=GROUP_ID,
+                text=f"<blockquote>🤖 <b>Modo de procesamiento automático ACTIVADO</b>\n\n"
+                     f"👤 Activado por: {user.first_name}\n"
+                     f"📥 El bot procesará automáticamente todo el contenido multimedia enviado a este grupo.\n\n"
+                     f"✅ Listo para recibir contenido!</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+        except Exception as e:
+            logger.error(f"Error enviando notificación al grupo: {e}")
+            await update.message.reply_text(
+                f"<blockquote>⚠️ Modo activado, pero no se pudo enviar notificación al grupo.\n"
+                f"Verifica que el bot tenga permisos en el grupo {GROUP_ID}</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+    
+    else:
+        # Desactivar modo grupo
+        admin_name = ""
+        if 'group_load_admin' in context.bot_data:
+            try:
+                admin_user = await context.bot.get_chat_member(update.effective_chat.id, context.bot_data['group_load_admin'])
+                admin_name = admin_user.user.first_name
+            except:
+                admin_name = "Administrador"
+        
+        start_time = context.bot_data.get('group_load_start_time', time.time())
+        duration = int(time.time() - start_time)
+        duration_str = f"{duration // 3600}h {(duration % 3600) // 60}m {duration % 60}s"
+        
+        context.bot_data['group_load_active'] = False
+        context.bot_data.pop('group_load_admin', None)
+        context.bot_data.pop('group_load_start_time', None)
+        
+        await update.message.reply_text(
+            f"<blockquote>🛑 <b>Modo de procesamiento automático en grupo DESACTIVADO</b>\n\n"
+            f"👤 <b>Desactivado por:</b> {user.first_name}\n"
+            f"👤 <b>Activado por:</b> {admin_name}\n"
+            f"⏱️ <b>Duración:</b> {duration_str}\n\n"
+            f"✅ El bot ya no procesará automáticamente contenido del grupo.\n"
+            f"Puedes reactivarlo con /group_load cuando lo necesites.</blockquote>",
+            parse_mode=ParseMode.HTML
+        )
+        
+        # Enviar notificación al grupo si es posible
+        try:
+            await context.bot.send_message(
+                chat_id=GROUP_ID,
+                text=f"<blockquote>🛑 <b>Modo de procesamiento automático DESACTIVADO</b>\n\n"
+                     f"👤 Desactivado por: {user.first_name}\n"
+                     f"⏱️ Duración de la sesión: {duration_str}\n\n"
+                     f"📴 El bot ya no procesará automáticamente contenido en este grupo.</blockquote>",
+                parse_mode=ParseMode.HTML
+            )
+        except Exception as e:
+            logger.error(f"Error enviando notificación de desactivación al grupo: {e}")
+
 async def process_load_queue(update, context):
     """Procesar la cola de contenido pendiente"""
     try:
@@ -7527,22 +7624,111 @@ async def handle_ai_automation(update: Update, context: ContextTypes.DEFAULT_TYP
         if update.message.chat_id not in [GROUP_ID, CHANNEL_ID, SEARCH_CHANNEL_ID]:
             return
         
-        # No procesar mensajes de administradores (ya tienen sus propios handlers)
-        if update.effective_user and update.effective_user.id in ADMIN_IDS:
-            return
-        
         # Verificar que el mensaje contiene multimedia
         if not (update.message.document or update.message.video or update.message.photo):
             return
+        
+        # Si estamos en el GROUP_ID, verificar si el modo group_load está activo
+        if update.message.chat_id == GROUP_ID:
+            group_load_active = context.bot_data.get('group_load_active', False)
+            
+            # Si group_load no está activo, no procesar automáticamente
+            if not group_load_active:
+                logger.info(f"Contenido multimedia detectado en grupo {GROUP_ID}, pero group_load no está activo")
+                return
+            
+            # Si es de un administrador y group_load está activo, procesar
+            if update.effective_user and update.effective_user.id in ADMIN_IDS:
+                logger.info(f"Procesando contenido de administrador en modo group_load: {update.effective_user.first_name}")
+            else:
+                # Si no es administrador, no procesar en el grupo
+                return
+        else:
+            # Para otros canales, no procesar mensajes de administradores (comportamiento original)
+            if update.effective_user and update.effective_user.id in ADMIN_IDS:
+                return
         
         # Intentar procesar automáticamente
         processed = await auto_uploader.process_message_automatically(update, context)
         
         if processed:
             logger.info(f"Mensaje procesado automáticamente por IA: {update.message.message_id}")
+            
+            # Si estamos en modo group_load, enviar confirmación
+            if update.message.chat_id == GROUP_ID and context.bot_data.get('group_load_active', False):
+                try:
+                    await update.message.reply_text(
+                        "<blockquote>✅ Contenido procesado automáticamente por IA</blockquote>",
+                        parse_mode=ParseMode.HTML
+                    )
+                except Exception as e:
+                    logger.error(f"Error enviando confirmación de procesamiento: {e}")
         
     except Exception as e:
         logger.error(f"Error en automatización IA: {e}")
+
+async def autoload_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Comando para activar/desactivar el modo de procesamiento automático en grupo"""
+    user = update.effective_user
+    
+    # Check if user is admin
+    if user.id not in ADMIN_IDS:
+        await update.message.reply_text(
+            "❌ Solo los administradores pueden usar este comando.",
+            parse_mode=ParseMode.HTML
+        )
+        return
+    
+    # Get current autoload state
+    autoload_active = context.bot_data.get('autoload_active', False)
+    
+    if not context.args:
+        # Show current status
+        status = "🟢 Activado" if autoload_active else "🔴 Desactivado"
+        await update.message.reply_text(
+            f"🤖 <b>Estado del Modo AutoLoad</b>\n\n"
+            f"Estado: {status}\n\n"
+            f"<b>Comandos disponibles:</b>\n"
+            f"• <code>/autoload on</code> - Activar modo automático\n"
+            f"• <code>/autoload off</code> - Desactivar modo automático\n\n"
+            f"<b>¿Qué hace el modo AutoLoad?</b>\n"
+            f"Cuando está activado, el bot procesará automáticamente todo el contenido multimedia "
+            f"que se envíe al grupo configurado (ID: {GROUP_ID}).\n\n"
+            f"⚠️ <b>Importante:</b> Asegúrate de que la automatización IA esté activada con <code>/ai_auto on</code>",
+            parse_mode=ParseMode.HTML
+        )
+        return
+    
+    command = context.args[0].lower()
+    
+    if command == "on":
+        context.bot_data['autoload_active'] = True
+        await update.message.reply_text(
+            f"✅ <b>Modo AutoLoad Activado</b>\n\n"
+            f"🤖 El bot ahora procesará automáticamente todo el contenido multimedia "
+            f"enviado al grupo configurado (ID: {GROUP_ID}).\n\n"
+            f"📋 <b>Requisitos verificados:</b>\n"
+            f"• Automatización IA: {'✅' if AI_AUTO_ENABLED else '❌ Desactivada - usa /ai_auto on'}\n"
+            f"• Auto Uploader: {'✅' if auto_uploader.config['enabled'] else '❌ Desactivado - usa /ai_uploader on'}\n\n"
+            f"💡 <b>Cómo usar:</b>\n"
+            f"1. Envía contenido multimedia al grupo {GROUP_ID}\n"
+            f"2. El bot lo procesará automáticamente\n"
+            f"3. Usa <code>/autoload off</code> para desactivar cuando termines",
+            parse_mode=ParseMode.HTML
+        )
+    elif command == "off":
+        context.bot_data['autoload_active'] = False
+        await update.message.reply_text(
+            f"🔴 <b>Modo AutoLoad Desactivado</b>\n\n"
+            f"El bot ya no procesará automáticamente el contenido del grupo.\n"
+            f"Usa <code>/autoload on</code> para reactivarlo cuando lo necesites.",
+            parse_mode=ParseMode.HTML
+        )
+    else:
+        await update.message.reply_text(
+            "❌ Comando inválido. Usa <code>/autoload on</code> o <code>/autoload off</code>",
+            parse_mode=ParseMode.HTML
+        )
 
 async def ai_uploader_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando para controlar el auto uploader"""
@@ -7671,6 +7857,7 @@ def main() -> None:
     application.add_handler(CommandHandler("a", a_command))
     application.add_handler(CommandHandler("cancelmulti", cancel_multi_command))
     application.add_handler(CommandHandler("load", load_command))
+    application.add_handler(CommandHandler("group_load", group_load_command))
     application.add_handler(CommandHandler("cancelmulti", cancel_multi_command))
     application.add_handler(CommandHandler("upser", upser_command))
     application.add_handler(CommandHandler("cancelupser", cancel_upser_command))
