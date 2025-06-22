@@ -53,9 +53,12 @@ def validate_ai_automation_handler():
         if 'async def handle_ai_automation' in content:
             print("✅ handle_ai_automation function found")
             
-            # Check if it references GROUP_ID in the chat_id check
-            if 'update.message.chat_id not in [GROUP_ID, CHANNEL_ID]' in content:
+            # Check if it references GROUP_ID in the chat_id check (updated format)
+            if 'update.message.chat_id not in [GROUP_ID, CHANNEL_ID, SEARCH_CHANNEL_ID]' in content:
                 print("✅ Function correctly checks GROUP_ID for message filtering")
+                return True
+            elif 'update.message.chat_id not in [GROUP_ID, CHANNEL_ID]' in content:
+                print("✅ Function correctly checks GROUP_ID for message filtering (legacy format)")
                 return True
             else:
                 print("❌ Function does not properly check GROUP_ID")

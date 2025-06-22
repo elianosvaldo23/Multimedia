@@ -1,16 +1,19 @@
 # Configuración del Grupo para Subida Automática
 
-## Grupo Configurado
-- **ID del Grupo**: `-1002688892136`
-- **Función**: El bot procesará automáticamente el contenido multimedia enviado a este grupo
+## Configuración de ID para Subida Automática
+- **ID Configurado**: `-1002688892136`
+- **Tipo**: Canal/Grupo para contenido multimedia automático
+- **Función**: El bot procesará automáticamente el contenido multimedia enviado a este chat
+
+⚠️ **IMPORTANTE**: Si este ID corresponde a un canal en lugar de un grupo, el bot funcionará igual. La automatización funciona tanto en grupos como en canales.
 
 ## Cómo Funciona la Subida Automática
 
 ### 1. Configuración Inicial
 El bot está configurado para procesar automáticamente contenido multimedia (películas y series) cuando:
-- El contenido se envía al grupo con ID `-1002688892136`
+- El contenido se envía al chat con ID `-1002688892136`
 - La automatización IA está activada
-- El bot tiene permisos de administrador en el grupo
+- El bot tiene permisos de administrador en el chat
 
 ### 2. Activar la Automatización
 Para que el bot procese automáticamente el contenido, un administrador debe activar la automatización IA:
@@ -37,7 +40,7 @@ Para ver la configuración actual:
 ```
 
 ### 4. Proceso Automático
-Cuando se envía contenido multimedia al grupo configurado:
+Cuando se envía contenido multimedia al chat configurado:
 
 1. **Detección**: El bot detecta automáticamente si el archivo es una película o serie
 2. **Análisis**: Utiliza IA para analizar el contenido y extraer información
@@ -74,18 +77,49 @@ Los administradores también pueden usar el comando `/load` para subida manual:
 TOKEN = "7636379442:AAF1-xO0HCBpRhdaCYM3iRbXHzwnOn59O08"
 ADMIN_IDS = [1742433244, 7588449861, 6866175814]
 CHANNEL_ID = -1002584219284          # Canal principal
-GROUP_ID = -1002688892136            # Grupo para contenido automático (NUEVO)
+GROUP_ID = -1002688892136            # Chat para contenido automático
 SEARCH_CHANNEL_ID = -1002302159104   # Canal de búsqueda
 ```
 
-### 7. Requisitos
-- El bot debe ser administrador en el grupo `-1002688892136`
+### 7. Formato Correcto del Comando /pedido
+
+**FORMATO ACTUALIZADO**: `/pedido tipo año nombre_del_contenido`
+
+**Ejemplos correctos**:
+- `/pedido serie 2006 la que se avecina`
+- `/pedido pelicula 2024 Avatar 3`
+- `/pedido serie 2023 The Last of Us`
+
+**Análisis IA Mejorado**:
+- ✅ Detecta correctamente el tipo de contenido (serie/película)
+- ✅ Valida el año (1900-2030)
+- ✅ Analiza la calidad del nombre del contenido
+- ✅ Proporciona recomendaciones específicas
+- ✅ Mayor precisión en la confianza del análisis
+
+### 8. Requisitos
+- El bot debe ser administrador en el chat `-1002688892136`
 - La automatización IA debe estar activada (`/ai_auto on`)
 - El auto uploader debe estar activado (`/ai_uploader on`)
 - Los archivos deben ser videos o documentos con nombres descriptivos
 
-### 8. Notas Importantes
+### 9. Solución de Problemas
+
+#### Si el bot no responde al contenido multimedia:
+1. Verificar que el bot es administrador del chat
+2. Confirmar que `/ai_auto on` está activado
+3. Confirmar que `/ai_uploader on` está activado
+4. Verificar que el contenido es multimedia (video/documento/foto)
+
+#### Si el análisis IA del /pedido falla:
+1. Usar el formato correcto: `/pedido tipo año nombre`
+2. Verificar que el año es numérico (1900-2030)
+3. Usar nombres descriptivos sin caracteres especiales
+4. Ejemplos válidos: `serie`, `pelicula`, `película`, `movie`
+
+### 10. Notas Importantes
 - Solo los administradores pueden activar/desactivar la automatización
-- El bot procesará automáticamente contenido de cualquier usuario en el grupo configurado
+- El bot procesará automáticamente contenido de cualquier usuario en el chat configurado
 - La calidad del procesamiento automático depende de la claridad del nombre del archivo
 - Se recomienda usar nombres descriptivos como "Película Nombre 2024" o "Serie Nombre S01E01"
+- El formato del comando `/pedido` ha sido actualizado para mayor precisión del análisis IA

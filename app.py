@@ -5953,10 +5953,11 @@ async def request_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     
     # Check arguments
-    if len(context.args) < 2:
+    if len(context.args) < 3:
         await update.message.reply_text(
             "Uso: /pedido Tipo (Pelicula o Serie) año nombre_del_contenido\n"
-            "<blockquote>Ejemplo: /pedido Pelicula 2024 Avatar 3</blockquote>"
+            "<blockquote>Ejemplo: /pedido serie 2006 la que se avecina</blockquote>"
+            "<blockquote>Ejemplo: /pedido pelicula 2024 Avatar 3</blockquote>"
             "<blockquote>Debes enviar el Formato correcto, de lo contrario su solicitud no sera atendida</blockquote>",
             parse_mode=ParseMode.HTML
         )
@@ -5992,8 +5993,16 @@ async def request_content(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
-    year = context.args[0]
-    content_name = " ".join(context.args[1:])
+    # Parse arguments: content_type year content_name
+    content_type = context.args[0].lower()
+    year = context.args[1]
+    content_name = " ".join(context.args[2:])
+    
+    # Add content type to the content name for better AI analysis
+    if content_type in ['serie', 'series']:
+        content_name = f"serie {content_name}"
+    elif content_type in ['pelicula', 'película', 'movie', 'film']:
+        content_name = f"película {content_name}"
     
     # Update user's request count
     db.update_request_count(user_id)
@@ -6298,39 +6307,72 @@ async def analyze_request_with_ai(content_name: str, year: str) -> dict:
         try:
             year_int = int(year)
             if 1900 <= year_int <= 2030:
-                confidence_score += 0.3
+                confidence_score += 0.4  # Increased weight for valid year
             else:
-                analysis_result['recommendations'].append("Año inválido")
-        except:
+                analysis_result['recommendations'].append("Año fuera del rango válido (1900-2030)")
+        except ValueError:
             analysis_result['recommendations'].append("Año no numérico")
+            return analysis_result  # Return early if year is invalid
         
         # Check content name patterns
         content_lower = content_name.lower()
         
         # Movie indicators
-        movie_keywords = ['pelicula', 'movie', 'film']
-        series_keywords = ['serie', 'series', 'temporada', 'season']
+        movie_keywords = ['pelicula', 'movie', 'film', 'película']
+        series_keywords = ['serie', 'series', 'temporada', 'season', 'show']
         
+        # Detect content type from the content name itself
+        content_type_detected = False
         if any(keyword in content_lower for keyword in movie_keywords):
             analysis_result['content_type'] = 'movie'
-            confidence_score += 0.2
+            confidence_score += 0.3
+            content_type_detected = True
         elif any(keyword in content_lower for keyword in series_keywords):
             analysis_result['content_type'] = 'series'
-            confidence_score += 0.2
+            confidence_score += 0.3
+            content_type_detected = True
         
-        # Check for common valid patterns
-        if len(content_name.split()) >= 2:  # At least 2 words
-            confidence_score += 0.2
+        # If no explicit type detected, try to infer from common patterns
+        if not content_type_detected:
+            # Check for series patterns like "S01", "Season", "Temporada"
+            if re.search(r'(s\d+|season|temporada)', content_lower):
+                analysis_result['content_type'] = 'series'
+                confidence_score += 0.2
+            else:
+                # Default to movie if no clear indicators
+                analysis_result['content_type'] = 'movie'
+                confidence_score += 0.1
         
-        # Check for special characters that might indicate spam
-        spam_chars = ['@', '#', 'http', 'www', '.com']
+        # Check for valid content name structure
+        words = content_name.split()
+        if len(words) >= 2:  # At least 2 words (reasonable for a title)
+            confidence_score += 0.2
+        elif len(words) == 1 and len(content_name) > 3:  # Single word but reasonable length
+            confidence_score += 0.1
+        
+        # Check for spam indicators
+        spam_chars = ['@', '#', 'http', 'www', '.com', '.net', '.org']
         if any(char in content_lower for char in spam_chars):
             confidence_score -= 0.5
             analysis_result['recommendations'].append("Contiene caracteres sospechosos")
         
+        # Check for excessive special characters
+        special_char_count = sum(1 for char in content_name if not char.isalnum() and char not in ' -.:')
+        if special_char_count > len(content_name) * 0.3:  # More than 30% special chars
+            confidence_score -= 0.2
+            analysis_result['recommendations'].append("Demasiados caracteres especiales")
+        
+        # Bonus for reasonable length
+        if 3 <= len(content_name) <= 100:
+            confidence_score += 0.1
+        
         # Final confidence calculation
         analysis_result['confidence'] = max(0.0, min(1.0, confidence_score))
         analysis_result['is_valid'] = analysis_result['confidence'] >= AI_CONFIG['auto_accept_threshold']
+        
+        # Add success message if valid
+        if analysis_result['is_valid']:
+            analysis_result['recommendations'].append("Pedido válido y bien formateado")
         
         return analysis_result
         
@@ -7481,11 +7523,16 @@ async def handle_ai_automation(update: Update, context: ContextTypes.DEFAULT_TYP
             return
         
         # Solo procesar mensajes del grupo específico o canales autorizados
-        if update.message.chat_id not in [GROUP_ID, CHANNEL_ID]:
+        # GROUP_ID puede ser un grupo o canal donde se envía contenido para procesamiento automático
+        if update.message.chat_id not in [GROUP_ID, CHANNEL_ID, SEARCH_CHANNEL_ID]:
             return
         
         # No procesar mensajes de administradores (ya tienen sus propios handlers)
         if update.effective_user and update.effective_user.id in ADMIN_IDS:
+            return
+        
+        # Verificar que el mensaje contiene multimedia
+        if not (update.message.document or update.message.video or update.message.photo):
             return
         
         # Intentar procesar automáticamente
