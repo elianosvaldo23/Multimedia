@@ -3237,6 +3237,8 @@ async def load_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
             'custom_filename': None  # Nuevo campo para el nombre personalizado
         }
         
+        logger.info(f"load_command: Activated bulk loading mode for user {user.first_name}, state set to WAITING_NAME")
+        
         await update.message.reply_text(
             "<blockquote>📥 <b>Modo de carga masiva activado</b>\n\n"
             "1️⃣ Envía primero el nombre exacto del contenido tal como lo quieres buscar en IMDb\n"
@@ -3291,17 +3293,28 @@ async def load_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         context.bot_data.pop('load_status_message', None)
 
 async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Manejar recepción de nombre de contenido en modo carga masiva"""
+    """Manejar recepción de nombres de contenido en modo de carga masiva"""
+    # Verificar que el usuario es administrador
     user = update.effective_user
+    if not user:
+        return
     
     # Verificar que el usuario es administrador
-    if user.id not in ADMIN_IDS:
+    if not is_admin(user.id):
         return
     
     # Verificar si estamos en modo de carga masiva
     load_state = context.bot_data.get('load_state', LOAD_STATE_INACTIVE)
     if load_state == LOAD_STATE_INACTIVE:
+        logger.info(f"handle_content_name: Load state is inactive, not processing text: {update.message.text[:50]}")
         return  # No estamos en modo carga masiva
+    
+    # Solo procesar si estamos esperando un nombre o ya tenemos archivos pendientes
+    if load_state not in [LOAD_STATE_WAITING_NAME, LOAD_STATE_WAITING_FILES]:
+        logger.info(f"handle_content_name: Load state is {load_state}, not processing text")
+        return
+    
+    logger.info(f"handle_content_name: Processing content name from user {user.first_name} in state {load_state}: {update.message.text[:50]}")
     
     # Obtener el nombre enviado por el administrador
     content_name = update.message.text.strip()
@@ -3441,17 +3454,23 @@ async def handle_content_name(update: Update, context: ContextTypes.DEFAULT_TYPE
         context.bot_data['load_state'] = LOAD_STATE_WAITING_FILES
 
 async def handle_load_content(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Manejar la recepción de archivos durante el modo de carga masiva"""
-    user = update.effective_user
-    
+    """Manejar la recepción de archivos durante el proceso de carga masiva"""
     # Verificar que el usuario es administrador
-    if user.id not in ADMIN_IDS:
+    user = update.effective_user
+    if not user:
         return
     
-    # Verificar si estamos en modo de carga masiva esperando archivos
+    # Verificar que el usuario es administrador
+    if not is_admin(user.id):
+        return
+    
+    # Verificar si estamos en modo de carga masiva
     load_state = context.bot_data.get('load_state', LOAD_STATE_INACTIVE)
     if load_state != LOAD_STATE_WAITING_FILES:
+        logger.info(f"handle_load_content: Load state is {load_state}, not processing content")
         return  # No estamos esperando archivos
+    
+    logger.info(f"handle_load_content: Processing content from user {user.first_name} in load state {load_state}")
     
     # Detectar si es un video, documento u otro contenido multimedia
     if update.message.video or update.message.document:
