@@ -228,8 +228,7 @@ def check_channel_membership(func):
             if not is_member:
                 # Usuario no es miembro, mostrar mensaje de suscripción
                 keyboard = [
-                    [InlineKeyboardButton("Unirse al Canal 1", url=f"https://t.me/+S_tQSpZglY1mNzQ8")]
-                    [InlineKeyboardButton("Unirse al Canal 2", url=f"https://t.me/multimediatvOficial")],
+                    [InlineKeyboardButton("Unirse al Canal 📢", url=f"https://t.me/multimediatvOficial")],
                     [InlineKeyboardButton("Ya me uní ✅", callback_data="verify_membership")]
                 ]
                 reply_markup = InlineKeyboardMarkup(keyboard)
@@ -6870,8 +6869,7 @@ async def verify_channel_membership(update: Update, context: ContextTypes.DEFAUL
     else:
         # Mostrar mensaje de error si aún no se ha unido
         keyboard = [
-            [InlineKeyboardButton("Unirse al Canal 1", url=f"https://t.me/+S_tQSpZglY1mNzQ8")]
-            [InlineKeyboardButton("Unirse al Canal 2", url=f"https://t.me/multimediatvOficial")],
+            [InlineKeyboardButton("Unirse al Canal 📢", url=f"https://t.me/multimediatvOficial")],
             [InlineKeyboardButton("Verificar nuevamente 🔄", callback_data="verify_membership")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -6976,8 +6974,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
     if not is_member and data not in ["verify_membership"]:
         # Usuario no es miembro, mostrar mensaje de suscripción
         keyboard = [
-            [InlineKeyboardButton("Unirse al Canal 1", url=f"https://t.me/+S_tQSpZglY1mNzQ8")]
-            [InlineKeyboardButton("Unirse al Canal 2", url=f"https://t.me/multimediatvOficial")],
+            [InlineKeyboardButton("Unirse al Canal 📢", url=f"https://t.me/multimediatvOficial")],
             [InlineKeyboardButton("Ya me uní ✅", callback_data="verify_membership")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
