@@ -76,6 +76,12 @@ CHANNEL_ID = -1002584219284
 GROUP_ID = -1002585538833
 SEARCH_CHANNEL_ID = -1002302159104
 
+# Canales obligatorios para verificar membresía
+REQUIRED_CHANNELS = [-1002584219284, -1002843477196]
+# Canal que NO se debe verificar
+IGNORED_CHANNEL = -1001449351811
+
+
 def is_admin(user_id: int) -> bool:
     """Verificar si un usuario es administrador"""
     return user_id in ADMIN_IDS
@@ -197,12 +203,19 @@ def truncate_description(description: str, max_length: int = 1000) -> str:
 
 # Función para verificar membresía al canal
 async def is_channel_member(user_id, context):
-    """Verifica si un usuario es miembro del canal principal."""
+    """Verifica si un usuario es miembro de al menos uno de los canales obligatorios."""
     try:
-        member = await context.bot.get_chat_member(chat_id=CHANNEL_ID, user_id=user_id)
-        return member.status in ['member', 'administrator', 'creator']
-    except TelegramError as e:
-        logger.error(f"Error verificando membresía: {e}")
+        for channel_id in REQUIRED_CHANNELS:
+            try:
+                member = await context.bot.get_chat_member(chat_id=channel_id, user_id=user_id)
+                if member.status in ['member', 'administrator', 'creator']:
+                    return True
+            except TelegramError as e:
+                logger.error(f"Error verificando membresía en canal {channel_id}: {e}")
+                continue
+        return False
+    except Exception as e:
+        logger.error(f"Error general verificando membresía: {e}")
         return False
         
 # Decorador para verificar membresía en el canal
